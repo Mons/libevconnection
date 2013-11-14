@@ -22,9 +22,11 @@ static void on_connected ( ev_cnn * cnn, struct sockaddr *peer ) {
 			cwarn("Uknown family: %d",peer->sa_family);
 	}
 	
-	char *buf = "GET / HTTP/1.0\r\n\r\n";
+	//char *buf = "GET / HTTP/1.0\r\n\r\n";
 	
-	do_write(cnn, buf, strlen(buf));
+	do_write(cnn, "GET /",0);
+	do_write(cnn, " HTTP/1.0\r\n",0);
+	do_write(cnn, "\r\n",0);
 }
 
 static void on_read ( ev_cnn * cnn, ssize_t len ) {

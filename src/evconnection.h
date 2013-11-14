@@ -1,3 +1,6 @@
+#ifndef EVCONNECTION_H
+#define EVCONNECTION_H
+
 #include <ev.h>
 #include <ares.h>
 
@@ -24,6 +27,11 @@
 	} while(0)
 #endif
 
+#ifndef likely
+#define likely(x) __builtin_expect((x),1)
+#define unlikely(x) __builtin_expect((x),0)
+#endif
+
 #define IOMAX ARES_GETSOCK_MAXNUM
 
 typedef struct {
@@ -42,7 +50,7 @@ typedef enum {
 } CnnState;
 
 typedef (*c_cb_err_t)(void *, int);
-typedef (*c_cb_conn_t)(void *, struct sockaddr_in *);
+typedef (*c_cb_conn_t)(void *, struct sockaddr *);
 typedef (*c_cb_read_t)(void *, size_t);
 
 typedef struct {
@@ -93,6 +101,11 @@ typedef struct {
 	int           iovcnt;
 	int           iovuse;
 	
+	struct iovec *wbuf;
+	int           wuse;
+	int           wlen;
+	int           wnow;
+	
 	char * rbuf;
 	size_t ruse;
 	size_t rlen;
@@ -121,3 +134,5 @@ void ev_cnn_clean(ev_cnn *self);
 
 void do_connect(ev_cnn * self);
 void do_write(ev_cnn *self, char *buf, size_t len);
+
+#endif

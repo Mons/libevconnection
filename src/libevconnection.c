@@ -23,6 +23,7 @@ static void on_rw_timer(  struct ev_loop *loop, ev_timer *w, int revents );
 
 static void on_read_io( struct ev_loop *loop, ev_io *w, int revents );
 static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents );
+static void on_write_io( struct ev_loop *loop, ev_io *w, int revents );
 
 static void on_connect_failed(ev_cnn * self, int err);
 
@@ -140,6 +141,7 @@ void ev_cnn_init(ev_cnn *self) {
 	self->rw_timeout = 1.0;
 	self->ipv4 = 2;
 	self->ipv6 = 1;
+	self->wnow = 1;
 	
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
@@ -168,7 +170,8 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 	cwarn("callback ghbn");
 	if(!hostent || status != ARES_SUCCESS) {
 		cwarn("Failed to lookup %s: %s\n", self->host, ares_strerror(status));
-		//on_connfail(self,status);
+		on_connect_failed(self,status);
+		return;
 	}
 	int i,err;
 	
@@ -179,7 +182,6 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 	
 	char ip[INET6_ADDRSTRLEN];
 	
-	
 	cwarn("Found address name %s\n", hostent->h_name);
 	for (i = 0; hostent->h_addr_list[i]; ++i) {
 		inet_ntop(hostent->h_addrtype, hostent->h_addr_list[i], ip, sizeof(ip));
@@ -189,6 +191,10 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 				sin = (struct sockaddr_in *) (*curr)->ai_addr;
 				sin->sin_port = htons(self->port);
 				curr = &(*curr)->ai_next;
+				self->dns.expire = time(NULL) + 60;
+				cwarn("af_inet success: %s", ip);
+			} else {
+				cwarn("af_inet failed: %s",gai_strerror(err));
 			}
 		}
 		else
@@ -198,6 +204,10 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 				sin6 = (struct sockaddr_in6 *) (*curr)->ai_addr;
 				sin6->sin6_port = htons(self->port);
 				curr = &(*curr)->ai_next;
+				self->dns.expire = time(NULL) + 60;
+				cwarn("af_inet6 success: %s", ip);
+			} else {
+				cwarn("af_inet6 failed: %s",gai_strerror(err));
 			}
 		}
 		else {
@@ -305,7 +315,8 @@ static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char
 }
 
 static inline void _resolve_ghbn(ev_cnn *self) {
-	ares_gethostbyname(self->dns.ares.channel, self->host, AF_INET, (ares_host_callback) ev_ares_ghbn_cb, self);
+	//ares_gethostbyname(self->dns.ares.channel, self->host, AF_INET, (ares_host_callback) ev_ares_ghbn_cb, self);
+	ares_gethostbyname(self->dns.ares.channel, self->host, AF_UNSPEC, (ares_host_callback) ev_ares_ghbn_cb, self);
 }
 
 static inline void _resolve_aaaa(ev_cnn *self) {
@@ -318,6 +329,29 @@ static inline void _resolve_a(ev_cnn *self) {
 
 void do_resolve (ev_cnn *self) {
 	cwarn("resolve %s", self->host);
+	if (!self->host) {
+		on_connect_failed(self,EDESTADDRREQ);
+		return;
+	}
+	struct sockaddr sa;
+	if (getaddrinfo(self->host,0,&hints4,&self->ai_top) == 0) {
+		struct sockaddr_in * sin = (struct sockaddr_in *) self->ai_top->ai_addr;
+		sin->sin_port = htons(self->port);
+		self->dns.expire = time(NULL) + 86400;
+		do_connect(self);
+		return;
+	}
+	else
+	if (getaddrinfo(self->host,0,&hints4,&self->ai_top) == 0) {
+		cwarn("af_inet6 addr");
+		struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *) self->ai_top->ai_addr;
+		sin6->sin6_port = htons(self->port);
+		self->dns.expire = time(NULL) + 86400;
+		do_connect(self);
+		return;
+	}
+	
+	
 	if (self->ai_top) {
 		freeaddrinfo( self->ai_top );
 		self->ai_top = self->ai = 0;
@@ -443,19 +477,22 @@ static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
 	cwarn("on con io %p -> %p (fd: %d)", w, self, w->fd);
 	
-	struct sockaddr_in peer;
+	struct sockaddr peer;
 	socklen_t addrlen = sizeof(peer);
 	
 	again:
-	if( getpeername( w->fd, ( struct sockaddr *)&peer, &addrlen) == 0 ) {
+	if( getpeername( w->fd, &peer, &addrlen) == 0 ) {
 		
 		ev_timer_stop( loop, &self->tw );
 		ev_io_stop( loop, w );
 		
 		ev_timer_init( &self->tw,on_rw_timer,self->rw_timeout,0 );
 		
-		ev_io_init( &self->rw, on_read_io, self->ww.fd, EV_READ );
+		ev_io_init( &self->rw, on_read_io, w->fd, EV_READ );
 		ev_io_start( EV_DEFAULT, &self->rw );
+		
+		ev_io_init( &self->ww, on_write_io, w->fd, EV_WRITE );
+		
 		set_state(CONNECTED);
 		
 		if (self->on_connected)
@@ -567,66 +604,140 @@ void do_connect(ev_cnn * self) {
 	ev_io_start( EV_DEFAULT, &self->ww );
 }
 
+void do_disconnect(ev_cnn * self) {
+	debug("do disconnect %d",self->state);
+	switch (self->state) {
+		case INITIAL:
+			return;
+		case CONNECTED:
+			// read/write buffers ?
+			ev_timer_stop(self->loop,&self->tw);
+			ev_io_stop(self->loop,&self->ww);
+			ev_io_stop(self->loop,&self->rw);
+			if (self->ww.fd > -1) close(self->ww.fd);
+			return;
+		case RECONNECTING:
+			ev_timer_stop(self->loop,&self->tw);
+			return;
+		case CONNECTING:
+			ev_timer_stop(self->loop,&self->tw);
+			ev_io_stop(self->loop,&self->ww);
+			if (self->ww.fd > -1) close(self->ww.fd);
+			return;
+		case DISCONNECTING:
+		case DISCONNECTED:
+			return;
+		default:
+			return;
+	}
+}
+
+
 static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
+	
 	ssize_t wr;
 	int iovcur;
 	struct iovec *iov;
-	debug("on ww io %p -> %p (fd: %d) [ use: %d ]", w, self, w->fd, self->iovuse);
-	ev_timer_stop( self->loop,&self->tw );
+	
+	debug("on ww io %p -> %p (fd: %d) [ wbufs: %d of %d ]", w, self, w->fd, self->wuse, self->wlen);
+	
+	ev_timer_stop( self->loop, &self->tw );
+	
 	again:
-	wr = writev(w->fd,self->iov,self->iovuse);
+	wr = writev(w->fd,self->wbuf,self->wuse);
 	if (wr > -1) {
-		//debug("written: %zu",wr);
-		for (iovcur = 0; iovcur < self->iovuse; iovcur++) {
-			iov = &(self->iov[iovcur]);
+		debug("written: %zu",wr);
+		for (iovcur = 0; iovcur < self->wuse; iovcur++) {
+			iov = &(self->wbuf[iovcur]);
 			if (wr < iov->iov_len) {
-				iov->iov_base += wr;
+				memmove( iov->iov_base, iov->iov_base + wr, iov->iov_len - wr );
+				iov->iov_len -= wr;
 				iovcur--;
 				break;
 			} else {
-				//debug("written [%u] %zu of %zu", iovcur, iov->iov_len, iov->iov_len);
+				free(iov->iov_base);
 				wr -= iov->iov_len;
 			}
 		}
-		self->iovuse -= iovcur;
-		//debug("last: %d",iovcur);
+		self->wuse -= iovcur;
+		if (self->wuse == 0) {
+			ev_io_stop(loop,w);
+		} else {
+			memmove( self->wbuf, self->wbuf + iovcur, self->wuse );
+			ev_timer_again( self->loop,&self->tw ); //written not all, so restart timer
+			return;
+		}
 	}
-	else if(wr != 0) {
+	else {
 		switch(errno){
 			case EINTR:
 				goto again;
 			case EAGAIN:
-				if (!w->active) {
-					ev_timer_start( self->loop,&self->tw );
-					ev_io_start(loop,w);
-				}
+				ev_timer_again( self->loop,&self->tw );
 				return;
 			default:
-				if (w->active)
-					ev_io_stop(loop,w);
 				on_connect_reset(self,errno);
+				return;
 		}
-	}
-	else {
-		if (w->active)
-			ev_io_stop(loop,w);
-		on_connect_reset(self,0);
 	}
 }
 
 
 void do_write(ev_cnn *self, char *buf, size_t len) {
-	if (len == 0) len = strlen(buf);
-	//debug("write %zu: %s",len,buf);
+	if ( len == 0 ) len = strlen(buf);
+	//cwarn("do_write");
+	if (self->wuse) {
+		//cwarn("have wbuf");
+		if (self->wuse == self->wlen) {
+			//cwarn("not enough %d",self->wlen);
+			self->wlen += 2;
+			self->wbuf = realloc(self->wbuf, sizeof(struct iovec) * ( self->wlen ));
+		}
+		self->wbuf[self->wuse].iov_base = strndup(buf,len);
+		self->wbuf[self->wuse].iov_len  = len;
+		self->wuse++;
+		return;
+	}
 	
-	// TODO: buffer pointer may be freed before the data was sent
-	//       correct behaviour is: if (!write()) { memcpy, start io }
+	ssize_t wr = 0;
 	
-	self->iov[ self->iovuse ].iov_base = buf;
-	self->iov[ self->iovuse ].iov_len = len;
-	self->iovuse++;
+	if (self->wnow) {
+		again:
+		
+		wr = write( self->ww.fd, buf, len );
+		if ( wr == len ) {
+			// success
+			//cwarn("written now");
+			return;
+		}
+		else
+		if (wr > -1) {
+			//partial write, passthru
+		}
+		else
+		{
+			switch(errno) {
+				case EINTR:
+					goto again;
+				case EAGAIN:
+					wr = 0;
+					break;
+				default:
+					on_connect_reset(self,errno);
+					return;
+			}
+		}
+	}
 	
-	do_enable_rw_timer(self);
-	on_write_io( self->loop, &self->ww,0 );
+	self->wlen = 2;
+	self->wbuf = calloc( self->wlen, sizeof(struct iovec) );
+	self->wbuf[0].iov_base = strndup(buf + wr,len - wr);
+	self->wbuf[0].iov_len  = len - wr;
+	self->wuse = 1;
+	
+	ev_timer_again(self->loop,&self->tw);
+	ev_io_start(self->loop,&self->ww);
+	
+	return;
 }
