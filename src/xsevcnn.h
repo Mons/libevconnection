@@ -115,6 +115,7 @@ typedef struct {
 	if (self->connected) SvREFCNT_dec(self->connected); \
 	if (self->connfail) SvREFCNT_dec(self->connfail); \
 	if (self->disconnected) SvREFCNT_dec(self->disconnected); \
+	if (self->host) SvREFCNT_dec(self->host); \
 	if (self->rbuf) SvREFCNT_dec(self->rbuf); \
 	if (self->self && SvOK(self->self) && SvOK( SvRV(self->self) )) { \
 		SvREFCNT_inc(SvRV(self->self)); \

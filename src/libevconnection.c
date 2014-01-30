@@ -9,7 +9,8 @@
 #define dSELFby(ptr,xx) ev_cnn * self = (ev_cnn *) ( (char *) ptr - (ptrdiff_t) &((ev_cnn *) 0)-> xx );
 #define set_state(newstate) do{ self->pstate = self->state; self->state = newstate; } while(0)
 
-#define debug(...) cwarn(__VA_ARGS__)
+//#define debug(...) cwarn(__VA_ARGS__)
+#define debug(...)
 
 static const struct addrinfo hints4 =
 	{ AI_NUMERICHOST, AF_INET, SOCK_STREAM, IPPROTO_TCP };
@@ -164,6 +165,14 @@ void ev_cnn_clean(ev_cnn *self) {
 	ares_destroy(self->dns.ares.channel);
 	ares_destroy_options(&self->dns.ares.options);
 	if (self->ai_top) freeaddrinfo(self->ai_top);
+	if (self->wbuf) {
+		int i;
+		for ( i=0; i < self->wuse; i++) {
+			if (self->wbuf[i].iov_base )
+				free(self->wbuf[i].iov_base);
+		}
+		free(self->wbuf);
+	}
 }
 
 static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hostent *hostent) {
@@ -328,7 +337,7 @@ static inline void _resolve_a(ev_cnn *self) {
 }
 
 void do_resolve (ev_cnn *self) {
-	cwarn("resolve %s", self->host);
+	//cwarn("resolve %s", self->host);
 	if (!self->host) {
 		on_connect_failed(self,EDESTADDRREQ);
 		return;
@@ -475,7 +484,7 @@ static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 
 static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
-	cwarn("on con io %p -> %p (fd: %d)", w, self, w->fd);
+	//cwarn("on con io %p -> %p (fd: %d)", w, self, w->fd);
 	
 	struct sockaddr peer;
 	socklen_t addrlen = sizeof(peer);
@@ -521,7 +530,7 @@ void do_connect(ev_cnn * self) {
 	int sock;
 	time_t now = time(NULL);
 	self->now = now;
-	cwarn("connecting to %s with timeout %f (addrc=%d, exp in %ld - %ld = %ld)",self->host, self->connect_timeout, self->addrc, self->now, self->dns.expire, self->now - self->dns.expire);
+	//cwarn("connecting to %s with timeout %f (addrc=%d, exp in %ld - %ld = %ld)",self->host, self->connect_timeout, self->addrc, self->now, self->dns.expire, self->now - self->dns.expire);
 	if (!self->ai_top || self->now > self->dns.expire) {
 		do_resolve(self);
 		return;
@@ -531,6 +540,7 @@ void do_connect(ev_cnn * self) {
 	}
 	struct addrinfo *ai = self->ai;
 	
+	/*
 	cwarn("connecting to %s with timeout %f (ai = %p have %d addrs, use %d)",self->host, self->connect_timeout, self->ai, 0,0);
 		char ip[INET6_ADDRSTRLEN];
 		switch (ai->ai_family) {
@@ -549,14 +559,15 @@ void do_connect(ev_cnn * self) {
 			default:
 				cwarn("Bad sa family: %d", self->addrs[ self->addri ].sa_family);
 		}
-		
+	*/
+	
 	self->state = CONNECTING;
 	if (self->connect_timeout > 0) {
 		ev_timer_init( &self->tw, on_connect_timer, self->connect_timeout, 0. );
 		ev_timer_start( self->loop, &self->tw );
 	}
 	
-	cwarn("create socket of family %d",ai->ai_family);
+	//cwarn("create socket of family %d",ai->ai_family);
 	
 	do {
 		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
