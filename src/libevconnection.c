@@ -388,7 +388,7 @@ static void on_connect_failed(ev_cnn * self, int err) {
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
 	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
-	cwarn("connect failed: %s (reconnect: %f)",strerror(err),self->reconnect);
+	//cwarn("connect failed: %s (reconnect: %f)",strerror(err),self->reconnect);
 	if (self->reconnect > 0) {
 		set_state(RECONNECTING);
 		ev_timer_init(&self->tw,on_reconnect_timer,self->reconnect,0.);

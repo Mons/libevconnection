@@ -54,6 +54,9 @@ typedef struct {
 	newXS(Module "::connect", XS_ev_cnn_connect, file);\
 	newXS(Module "::disconnect", XS_ev_cnn_disconnect, file);\
 	newXS(Module "::reconnect", XS_ev_cnn_reconnect, file);\
+	newXS(Module "::server", XS_ev_cnn_server, file);\
+	newXS(Module "::host", XS_ev_cnn_host, file);\
+	newXS(Module "::port", XS_ev_cnn_port, file);\
 } STMT_END
 
 
@@ -72,6 +75,7 @@ typedef struct {
 	{\
 		int read_buffer = 0x20000;\
 		SV **key;\
+		if ((key = hv_fetchs(args, "read_buffer", 0)) ) read_buffer = SvNV(*key); \
 		if ((key = hv_fetchs(args, "timeout", 0)) ) cnn->connect_timeout = cnn->rw_timeout = SvNV(*key); \
 		if ((key = hv_fetchs(args, "read_buffer", 0)) && SvOK(*key) && SvUV(*key) > 0 ) read_buffer = SvUV(*key); \
 		if ((key = hv_fetchs(conf, "reconnect", 0)) ) { \
@@ -195,6 +199,56 @@ XS(XS_ev_cnn_reconnect)
 	return;
 }
 
+XS(XS_ev_cnn_server);
+XS(XS_ev_cnn_server)
+{
+	dVAR;dXSARGS;
+	if (items != 1) croak_xs_usage(cv,  "self");
+	PERL_UNUSED_VAR(ax);
+	SP -= items;
+	
+	xs_ev_cnn_self(xs_ev_cnn);
+	ST(0) = sv_2mortal(newSVpvf("%s:%hu",self->cnn.host,self->cnn.port));
+	
+	XSRETURN(1);
+	PUTBACK;
+	return;
+}
+
+XS(XS_ev_cnn_host);
+XS(XS_ev_cnn_host)
+{
+	dVAR;dXSARGS;
+	if (items != 1) croak_xs_usage(cv,  "self");
+	PERL_UNUSED_VAR(ax);
+	SP -= items;
+	
+	xs_ev_cnn_self(xs_ev_cnn);
+	ST(0) = sv_2mortal(newSVpvf("%s",self->cnn.host));
+	
+	XSRETURN(1);
+	PUTBACK;
+	return;
+}
+
+XS(XS_ev_cnn_port);
+XS(XS_ev_cnn_port)
+{
+	dVAR;dXSARGS;
+	if (items != 1) croak_xs_usage(cv,  "self");
+	PERL_UNUSED_VAR(ax);
+	SP -= items;
+	
+	xs_ev_cnn_self(xs_ev_cnn);
+	warn("Saving port: %hu, %u", self->cnn.port, self->cnn.port);
+	ST(0) = sv_2mortal(newSVuv( (UV)(self->cnn.port) ));
+	
+	XSRETURN(1);
+	PUTBACK;
+	return;
+}
+
+
 #define xs_ev_cnn_on_connect(self, before, after) STMT_START {\
 	if (before) self->on_connect_before = before;\
 	if (after) self->on_connect_after = after;\
@@ -241,7 +295,7 @@ void xs_ev_cnn_on_connected_cb(ev_cnn *cnn, struct sockaddr *peer) {
 		self->on_connect_before( (void *) self, peer );
 #endif
 
-	if (self->connected) {
+	if (self->connected && SvOK(self->connected)) {
 		char ip[INET6_ADDRSTRLEN];
 		unsigned short port = 0;
 		switch (peer->sa_family) {

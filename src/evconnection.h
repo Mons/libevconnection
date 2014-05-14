@@ -64,7 +64,7 @@ typedef struct {
 	
 	
 	char     *host;
-	short int port;
+	short unsigned int port;
 	char      ipv4;
 	char      ipv6;
 	
