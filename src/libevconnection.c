@@ -651,26 +651,29 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	int iovcur;
 	struct iovec *iov;
 	
-	debug("on ww io %p -> %p (fd: %d) [ wbufs: %d of %d ]", w, self, w->fd, self->wuse, self->wlen);
+	//cwarn("on ww io %p -> %p (fd: %d) [ wbufs: %d of %d ]", w, self, w->fd, self->wuse, self->wlen);
 	
 	ev_timer_stop( self->loop, &self->tw );
 	
 	again:
 	wr = writev(w->fd,self->wbuf,self->wuse);
 	if (wr > -1) {
-		debug("written: %zu",wr);
+		//cwarn("written: %zu",wr);
 		for (iovcur = 0; iovcur < self->wuse; iovcur++) {
 			iov = &(self->wbuf[iovcur]);
 			if (wr < iov->iov_len) {
+				//cwarn("Written %d of iov size %d",wr,iov->iov_len);
 				memmove( iov->iov_base, iov->iov_base + wr, iov->iov_len - wr );
 				iov->iov_len -= wr;
-				iovcur--;
+				//iovcur--;
 				break;
 			} else {
+				cwarn("Written iov of size %d",iov->iov_len);
 				free(iov->iov_base);
 				wr -= iov->iov_len;
 			}
 		}
+		//cwarn("freed %d iovs",iovcur);
 		self->wuse -= iovcur;
 		if (self->wuse == 0) {
 			ev_io_stop(loop,w);
@@ -688,6 +691,7 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 				ev_timer_again( self->loop,&self->tw );
 				return;
 			default:
+				cwarn("Connection failed on write: %s",strerror(errno));
 				on_connect_reset(self,errno);
 				return;
 		}
@@ -699,7 +703,7 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 	if ( len == 0 ) len = strlen(buf);
 	//cwarn("do_write");
 	if (self->wuse) {
-		//cwarn("have wbuf");
+		//cwarn("have wbuf, use it");
 		if (self->wuse == self->wlen) {
 			//cwarn("not enough %d",self->wlen);
 			self->wlen += 2;
@@ -717,6 +721,7 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 		again:
 		
 		wr = write( self->ww.fd, buf, len );
+		//cwarn("writing %d",len);
 		if ( wr == len ) {
 			// success
 			//cwarn("written now");
@@ -735,12 +740,13 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 					wr = 0;
 					break;
 				default:
+					cwarn("write failed: %s", strerror(errno));
 					on_connect_reset(self,errno);
 					return;
 			}
 		}
 	}
-	
+	//cwarn("partial write: %d, put %d in iov",wr,len - wr);
 	self->wlen = 2;
 	self->wbuf = calloc( self->wlen, sizeof(struct iovec) );
 	self->wbuf[0].iov_base = strndup(buf + wr,len - wr);
