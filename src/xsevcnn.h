@@ -362,8 +362,6 @@ void xs_ev_cnn_postpone_cb ( struct ev_loop *loop,  ev_timer *w, int revents) {
 	SAVETMPS;
 	SV **sp1 = PL_stack_sp;
 	
-	SV *cb;
-	int i;
 	AV *postpone = (AV *) sv_2mortal((SV *)self->postpone);
 	
 	self->postpone = 0;

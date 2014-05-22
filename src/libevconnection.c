@@ -11,6 +11,7 @@
 
 //#define debug(...) cwarn(__VA_ARGS__)
 #define debug(...)
+#define memdup(a,b) memcpy(malloc(b),a,b)
 
 static const struct addrinfo hints4 =
 	{ AI_NUMERICHOST, AF_INET, SOCK_STREAM, IPPROTO_TCP };
@@ -274,13 +275,13 @@ static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned c
 	}
 	
 	self->dns.expire = time(NULL) + minttl;
-	cwarn("set expire to %ld + %d = %ld", time(NULL), minttl, self->dns.expire);
+	//cwarn("set expire to %ld + %d = %ld", time(NULL), minttl, self->dns.expire);
 	
 	do_connect(self);
 }
 
 static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char *abuf, int alen) {
-	cwarn("callback a %d",alen);
+	//cwarn("callback a %d",alen);
 	struct ares_addrttl a[16];
 	int count = 16;
 	if(status != ARES_SUCCESS || ( status = ares_parse_a_reply(abuf, alen, 0, a, &count) ) != ARES_SUCCESS) {
@@ -298,7 +299,7 @@ static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char
 	char ip[INET_ADDRSTRLEN];
 	struct sockaddr_in * sin;
 		
-	cwarn("ipv4 ok %d", count);
+	//cwarn("ipv4 ok %d", count);
 	int i,err;
 	for (i = 0; i < count; i++) {
 		if (minttl > a[self->addrc].ttl)
@@ -318,7 +319,7 @@ static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char
 		}
 	}
 	self->dns.expire = time(NULL) + minttl;
-	cwarn("set expire to %ld + %d = %ld", time(NULL), minttl, self->dns.expire);
+	//cwarn("set expire to %ld + %d = %ld", time(NULL), minttl, self->dns.expire);
 	
 	do_connect(self);
 }
@@ -342,7 +343,6 @@ void do_resolve (ev_cnn *self) {
 		on_connect_failed(self,EDESTADDRREQ);
 		return;
 	}
-	struct sockaddr sa;
 	if (getaddrinfo(self->host,0,&hints4,&self->ai_top) == 0) {
 		struct sockaddr_in * sin = (struct sockaddr_in *) self->ai_top->ai_addr;
 		sin->sin_port = htons(self->port);
@@ -447,7 +447,7 @@ static void on_rw_timer(  struct ev_loop *loop, ev_timer *w, int revents ) {
 
 static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,rw);
-	ssize_t rc = 0, puse;
+	ssize_t rc = 0;
 	debug("on rw io %p -> %p (fd: %d) (%d)", w, self, w->fd, revents);
 	again:
 	rc = read(w->fd,self->rbuf + self->ruse,self->rlen - self->ruse);
@@ -668,17 +668,17 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 				//iovcur--;
 				break;
 			} else {
-				cwarn("Written iov of size %d",iov->iov_len);
 				free(iov->iov_base);
 				wr -= iov->iov_len;
 			}
 		}
-		//cwarn("freed %d iovs",iovcur);
 		self->wuse -= iovcur;
+		//cwarn("freed %d iovs, left %d",iovcur, self->wuse);
 		if (self->wuse == 0) {
 			ev_io_stop(loop,w);
 		} else {
-			memmove( self->wbuf, self->wbuf + iovcur, self->wuse );
+			memmove( self->wbuf, self->wbuf + iovcur, self->wuse * sizeof(struct iovec) );
+			
 			ev_timer_again( self->loop,&self->tw ); //written not all, so restart timer
 			return;
 		}
@@ -705,12 +705,12 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 	if (self->wuse) {
 		//cwarn("have wbuf, use it");
 		if (self->wuse == self->wlen) {
-			//cwarn("not enough %d",self->wlen);
 			self->wlen += 2;
 			self->wbuf = realloc(self->wbuf, sizeof(struct iovec) * ( self->wlen ));
 		}
-		self->wbuf[self->wuse].iov_base = strndup(buf,len);
+		self->wbuf[self->wuse].iov_base = memdup(buf,len);
 		self->wbuf[self->wuse].iov_len  = len;
+		//cwarn("iov[%d] stored %zu: %p",self->wuse,len, self->wbuf[self->wuse].iov_base);
 		self->wuse++;
 		return;
 	}
@@ -724,11 +724,12 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 		//cwarn("writing %d",len);
 		if ( wr == len ) {
 			// success
-			//cwarn("written now");
+			//cwarn("written now %zu %u",wr, *((uint32_t *)(buf + 8)) );
 			return;
 		}
 		else
 		if (wr > -1) {
+			//cwarn("written part %zu %u",wr, *((uint32_t *)(buf + 8)) );
 			//partial write, passthru
 		}
 		else
@@ -746,10 +747,10 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 			}
 		}
 	}
-	//cwarn("partial write: %d, put %d in iov",wr,len - wr);
+	
 	self->wlen = 2;
 	self->wbuf = calloc( self->wlen, sizeof(struct iovec) );
-	self->wbuf[0].iov_base = strndup(buf + wr,len - wr);
+	self->wbuf[0].iov_base = memdup(buf + wr,len - wr);
 	self->wbuf[0].iov_len  = len - wr;
 	self->wuse = 1;
 	
