@@ -163,6 +163,22 @@ void ev_cnn_init(ev_cnn *self) {
 }
 
 void ev_cnn_clean(ev_cnn *self) {
+	int i;
+	io_ptr *iop;
+	for (i=0; i<IOMAX; i++) {
+		if ( self->dns.ios[i].io.fd > -1 ) {
+			iop = &self->dns.ios[i];
+			if (ev_is_active( &iop->io )) {
+				ev_io_stop(self->loop, &iop->io);
+			}
+			
+		}
+	}
+	
+	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
+	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
+	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
+	
 	ares_destroy(self->dns.ares.channel);
 	ares_destroy_options(&self->dns.ares.options);
 	if (self->ai_top) freeaddrinfo(self->ai_top);
@@ -626,21 +642,24 @@ void do_disconnect(ev_cnn * self) {
 			ev_io_stop(self->loop,&self->ww);
 			ev_io_stop(self->loop,&self->rw);
 			if (self->ww.fd > -1) close(self->ww.fd);
-			return;
+			break;
 		case RECONNECTING:
 			ev_timer_stop(self->loop,&self->tw);
-			return;
+			break;
 		case CONNECTING:
 			ev_timer_stop(self->loop,&self->tw);
 			ev_io_stop(self->loop,&self->ww);
 			if (self->ww.fd > -1) close(self->ww.fd);
-			return;
+			break;
 		case DISCONNECTING:
 		case DISCONNECTED:
 			return;
 		default:
-			return;
+			break;
 	}
+	set_state(INITIAL);
+	if (self->on_disconnect)
+		self->on_disconnect(self,0);
 }
 
 
