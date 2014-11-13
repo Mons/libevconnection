@@ -297,11 +297,11 @@ static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned c
 }
 
 static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char *abuf, int alen) {
-	//cwarn("callback a %d",alen);
+	debug("callback a %d (%p:%s)",alen,self->host,self->host);
 	struct ares_addrttl a[16];
 	int count = 16;
 	if(status != ARES_SUCCESS || ( status = ares_parse_a_reply(abuf, alen, 0, a, &count) ) != ARES_SUCCESS) {
-		cwarn("Failed to lookup A %s: %s\n", self->host, ares_strerror(status));
+		cwarn("Failed to lookup A %p:%s: %s\n", self->host,self->host, ares_strerror(status));
 		if (self->ipv6 && self->ipv6 <= self->ipv4) {
 			_resolve_aaaa(self);
 		} else {
@@ -315,7 +315,7 @@ static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char
 	char ip[INET_ADDRSTRLEN];
 	struct sockaddr_in * sin;
 		
-	//cwarn("ipv4 ok %d", count);
+	debug("ipv4 ok %d", count);
 	int i,err;
 	for (i = 0; i < count; i++) {
 		if (minttl > a[self->addrc].ttl)
@@ -350,11 +350,12 @@ static inline void _resolve_aaaa(ev_cnn *self) {
 }
 
 static inline void _resolve_a(ev_cnn *self) {
+	debug("_resolve_a %p:%s", self->host,self->host);
 	ares_search(self->dns.ares.channel, self->host, ns_c_in, ns_t_a, (ares_callback) ev_ares_a_cb, self);
 }
 
 void do_resolve (ev_cnn *self) {
-	//cwarn("resolve %s", self->host);
+	debug("resolve %p:%s", self->host,self->host);
 	if (!self->host) {
 		on_connect_failed(self,EDESTADDRREQ);
 		return;
@@ -368,7 +369,7 @@ void do_resolve (ev_cnn *self) {
 	}
 	else
 	if (getaddrinfo(self->host,0,&hints4,&self->ai_top) == 0) {
-		cwarn("af_inet6 addr");
+		debug("af_inet6 addr");
 		struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *) self->ai_top->ai_addr;
 		sin6->sin6_port = htons(self->port);
 		self->dns.expire = time(NULL) + 86400;

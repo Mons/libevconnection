@@ -20,6 +20,7 @@ usage:
 
 #include "evconnection.h"
 #include "libevconnection.c"
+
 #define NEED_newRV_noinc
 #include "ppport.h"
 
@@ -67,9 +68,11 @@ typedef struct {
 	Type * self = (Type *) safemalloc( sizeof(Type) ); \
 	memset(self,0,sizeof(Type)); \
 	self->stash = gv_stashpv(SvPV_nolen(ST(0)), TRUE); \
-	{ SV *iv = newSViv(PTR2IV( self )); \
-	self->self = sv_bless(newRV_noinc (iv), self->stash); \
-	ST(0) = sv_2mortal(sv_bless (newRV_noinc(iv), self->stash)); } \
+	{\
+		SV *iv = newSViv(PTR2IV( self ));\
+		ST(0) = sv_2mortal(sv_bless(newRV_noinc (iv), self->stash));\
+		self->self = SvRV( ST(0) ); \
+	} \
 	self->cnn.loop = EV_DEFAULT; \
 	ev_cnn_init(&self->cnn);\
 	HV *args = (HV*) SvRV(ST(1));\
@@ -118,26 +121,23 @@ typedef struct {
 #define xs_ev_cnn_self(Type) register Type *self = ( Type * ) SvUV( SvRV( ST(0) ) )
 
 #define xs_ev_cnn_destroy(self)\
-	if (self->connected) SvREFCNT_dec(self->connected); \
-	if (self->connfail) SvREFCNT_dec(self->connfail); \
-	if (self->disconnected) SvREFCNT_dec(self->disconnected); \
-	if (self->host) SvREFCNT_dec(self->host); \
-	if (self->rbuf) SvREFCNT_dec(self->rbuf); \
-	if (self->self && SvOK(self->self) && SvOK( SvRV(self->self) )) { \
-		SvREFCNT_inc(SvRV(self->self)); \
-		SvREFCNT_dec(self->self); \
-	} \
-	\
-	if (self->postpone) {\
+	if (!PL_dirty && self->postpone) {\
 		xs_ev_cnn_postpone_cb ( self->cnn.loop, &self->postpone_timer, 0);\
 	}\
 	\
 	ev_cnn_clean(&self->cnn);\
+	\
+	if (self->connected)    { SvREFCNT_dec(self->connected);    self->connected    = 0; } \
+	if (self->connfail)     { SvREFCNT_dec(self->connfail);     self->connfail     = 0; } \
+	if (self->disconnected) { SvREFCNT_dec(self->disconnected); self->disconnected = 0; }\
+	\
+	if (PL_dirty) return; \
+	if (self->host) SvREFCNT_dec(self->host); \
+	if (self->rbuf) SvREFCNT_dec(self->rbuf); \
 	safefree(self);
 
-
 #define xs_ev_cnn_checkconn(_self,_cb) STMT_START{ \
-		if (unlikely(!_self->self)) return ;\
+		if (unlikely(!_self->self || !SvOK(_self->self))) return ;\
 		if (unlikely(_self->cnn.state != CONNECTED)) { \
 			if (!_self->postpone) _self->postpone = newAV(); \
 			AV *pp = newAV(); \
@@ -263,28 +263,28 @@ XS(XS_ev_cnn_port)
 
 
 void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error) {
-	xs_ev_cnn * obj = (xs_ev_cnn *) cnn;
+	xs_ev_cnn * self = (xs_ev_cnn *) cnn;
 	dSP;
 #if XSEV_CON_HOOKS
-	if (obj->on_disconnect_before)
-		obj->on_disconnect_before( (void *) obj, error );
+	if (self->on_disconnect_before)
+		self->on_disconnect_before( (void *) self, error );
 #endif
-	if (obj->disconnected) {
+	if (self->disconnected) {
 		ENTER;
 		SAVETMPS;
 		PUSHMARK(SP);
 		EXTEND(SP, 2);
-			PUSHs( obj->self );
+			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
 			PUSHs( sv_2mortal( newSVpv( strerror(error),0 ) ) );
 		PUTBACK;
 		errno = error;
-		call_sv( obj->disconnected, G_DISCARD | G_VOID );
+		call_sv( self->disconnected, G_DISCARD | G_VOID );
 		FREETMPS;
 		LEAVE;
 	}
 #if XSEV_CON_HOOKS
-	if (obj->on_disconnect_after)
-		obj->on_disconnect_after( (void *) obj, error );
+	if (self->on_disconnect_after)
+		self->on_disconnect_after( (void *) self, error );
 #endif
 }
 
@@ -322,7 +322,7 @@ void xs_ev_cnn_on_connected_cb(ev_cnn *cnn, struct sockaddr *peer) {
 		SAVETMPS;
 		PUSHMARK(SP);
 		EXTEND(SP, 3);
-			PUSHs( self->self );
+			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
 			PUSHs( sv_2mortal( newSVpv( ip,0 ) ) );
 			PUSHs( sv_2mortal( newSVuv( port ) ) );
 		PUTBACK;
@@ -337,19 +337,19 @@ void xs_ev_cnn_on_connected_cb(ev_cnn *cnn, struct sockaddr *peer) {
 #endif
 }
 
-void xs_ev_cnn_on_connfail_cb(ev_cnn *self, int err) {
-	xs_ev_cnn * obj = (xs_ev_cnn *) self;
+void xs_ev_cnn_on_connfail_cb(ev_cnn *cnn, int err) {
+	xs_ev_cnn * self = (xs_ev_cnn *) cnn;
 	dSP;
-	if (obj->connfail) {
+	if (self->connfail) {
 		ENTER;
 		SAVETMPS;
 		PUSHMARK(SP);
 		EXTEND(SP, 2);
-			PUSHs( obj->self );
+			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
 			PUSHs( sv_2mortal( newSVpvf( "%s",strerror(err) ) ) );
 		PUTBACK;
 		errno = err;
-		call_sv( obj->connfail, G_DISCARD | G_VOID );
+		call_sv( self->connfail, G_DISCARD | G_VOID );
 		FREETMPS;
 		LEAVE;
 	}
