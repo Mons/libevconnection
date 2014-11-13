@@ -265,7 +265,7 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error) {
 	dSP;
 #if XSEV_CON_HOOKS
 	if (obj->on_disconnect_before)
-		obj->on_disconnect_before( (void *) self, error );
+		obj->on_disconnect_before( (void *) obj, error );
 #endif
 	if (obj->disconnected) {
 		ENTER;
@@ -282,7 +282,7 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error) {
 	}
 #if XSEV_CON_HOOKS
 	if (obj->on_disconnect_after)
-		obj->on_disconnect_after( (void *) self, error );
+		obj->on_disconnect_after( (void *) obj, error );
 #endif
 }
 
