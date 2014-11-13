@@ -20,6 +20,8 @@ usage:
 
 #include "evconnection.h"
 #include "libevconnection.c"
+#define NEED_newRV_noinc
+#include "ppport.h"
 
 #define dObjBy(Type,obj,ptr,xx) Type * obj = (Type *) ( (char *) ptr - (ptrdiff_t) &((Type *) 0)-> xx )
 
