@@ -242,7 +242,6 @@ XS(XS_ev_cnn_port)
 	SP -= items;
 	
 	xs_ev_cnn_self(xs_ev_cnn);
-	warn("Saving port: %hu, %u", self->cnn.port, self->cnn.port);
 	ST(0) = sv_2mortal(newSVuv( (UV)(self->cnn.port) ));
 	
 	XSRETURN(1);
