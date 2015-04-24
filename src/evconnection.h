@@ -49,67 +49,67 @@ typedef enum {
 	RECONNECTING
 } CnnState;
 
-typedef (*c_cb_err_t)(void *, int);
-typedef (*c_cb_conn_t)(void *, struct sockaddr *);
-typedef (*c_cb_read_t)(void *, size_t);
+typedef void (*c_cb_err_t)(void *, int);
+typedef void (*c_cb_conn_t)(void *, struct sockaddr *);
+typedef void (*c_cb_read_t)(void *, size_t);
 
 typedef struct {
 	ev_io    rw;
 	ev_io    ww;
 	ev_timer tw;
-	
+
 	CnnState state;
 	CnnState pstate;
 	struct ev_loop * loop;
-	
-	
+
+
 	char     *host;
 	short unsigned int port;
 	char      ipv4;
 	char      ipv6;
-	
+
 	struct addrinfo *ai; // current pointer
 	struct addrinfo *ai_top; // top pointer
-	
+
 	struct {
 		int i;
 		int c;
 		struct addrinfo * addr[16];
 	} ai1;
-	
-	
+
+
 	struct sockaddr    addrs[16];
 	int                addrc;
 	int                addri;
-	
+
 	time_t             now;
-	
+
 	int   sock; // from io?
-	
+
 	// params
 	double reconnect;
 	double connect_timeout;
 	double rw_timeout;
-	
+
 	c_cb_conn_t on_connected;
 	c_cb_err_t  on_disconnect;
 	c_cb_err_t  on_connfail;
 	c_cb_read_t on_read;
-	
+
 	// read/write
 	struct iovec *iov;
 	int           iovcnt;
 	int           iovuse;
-	
+
 	struct iovec *wbuf;
 	int           wuse;
 	int           wlen;
 	int           wnow;
-	
+
 	char * rbuf;
 	size_t ruse;
 	size_t rlen;
-	
+
 	//dns
 	struct {
 		io_ptr     ios[IOMAX];
