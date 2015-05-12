@@ -2,7 +2,7 @@
 usage:
 	BOOT:
 		I_EV_CNN_API(PackageName);
-		
+
 	void new (...)
 		PPCODE:
 			xs_ev_cnn_new(YourType); // declares YourType * self, set ST(0)
@@ -14,7 +14,7 @@ usage:
 		PPCODE:
 			xs_ev_cnn_self(YourType); // declares YourType * self
 			SV *cb = ST(items - 1); // suppose callback is last arg
-			
+
 			xs_ev_cnn_checkconn(self,cb);
 */
 
@@ -35,6 +35,7 @@ usage:
 	\
 	SV *rbuf;\
 	\
+	bool call_connected;\
 	SV *connected;\
 	SV *disconnected;\
 	SV *connfail;\
@@ -95,6 +96,7 @@ typedef struct {
 		cnn->rbuf = SvPVX(self->rbuf); \
 		cnn->rlen = SvLEN(self->rbuf); \
 		\
+		self->call_connected = true; \
 		if ((key = hv_fetchs(conf, "connected", 0)) && SvROK(*key)) SvREFCNT_inc(self->connected = *key);\
 		if ((key = hv_fetchs(conf, "disconnected", 0)) && SvROK(*key)) SvREFCNT_inc(self->disconnected = *key);\
 		if ((key = hv_fetchs(conf, "connfail", 0)) && SvROK(*key)) SvREFCNT_inc(self->connfail = *key);\
@@ -159,10 +161,10 @@ XS(XS_ev_cnn_connect)
 	if (items != 1) croak_xs_usage(cv,  "self");
 	PERL_UNUSED_VAR(ax);
 	SP -= items;
-	
+
 	xs_ev_cnn_self(xs_ev_cnn);
 	do_connect(&self->cnn);
-	
+
 	XSRETURN_UNDEF;
 	PUTBACK;
 	return;
@@ -175,10 +177,10 @@ XS(XS_ev_cnn_disconnect)
 	if (items != 1) croak_xs_usage(cv,  "self");
 	PERL_UNUSED_VAR(ax);
 	SP -= items;
-	
+
 	xs_ev_cnn_self(xs_ev_cnn);
 	do_disconnect(&self->cnn);
-	
+
 	XSRETURN_UNDEF;
 	PUTBACK;
 	return;
@@ -191,11 +193,11 @@ XS(XS_ev_cnn_reconnect)
 	if (items != 1) croak_xs_usage(cv,  "self");
 	PERL_UNUSED_VAR(ax);
 	SP -= items;
-	
+
 	xs_ev_cnn_self(xs_ev_cnn);
 	do_disconnect(&self->cnn);
 	do_connect(&self->cnn);
-	
+
 	XSRETURN_UNDEF;
 	PUTBACK;
 	return;
@@ -208,10 +210,10 @@ XS(XS_ev_cnn_server)
 	if (items != 1) croak_xs_usage(cv,  "self");
 	PERL_UNUSED_VAR(ax);
 	SP -= items;
-	
+
 	xs_ev_cnn_self(xs_ev_cnn);
 	ST(0) = sv_2mortal(newSVpvf("%s:%hu",self->cnn.host,self->cnn.port));
-	
+
 	XSRETURN(1);
 	PUTBACK;
 	return;
@@ -224,10 +226,10 @@ XS(XS_ev_cnn_host)
 	if (items != 1) croak_xs_usage(cv,  "self");
 	PERL_UNUSED_VAR(ax);
 	SP -= items;
-	
+
 	xs_ev_cnn_self(xs_ev_cnn);
 	ST(0) = sv_2mortal(newSVpvf("%s",self->cnn.host));
-	
+
 	XSRETURN(1);
 	PUTBACK;
 	return;
@@ -240,10 +242,10 @@ XS(XS_ev_cnn_port)
 	if (items != 1) croak_xs_usage(cv,  "self");
 	PERL_UNUSED_VAR(ax);
 	SP -= items;
-	
+
 	xs_ev_cnn_self(xs_ev_cnn);
 	ST(0) = sv_2mortal(newSVuv( (UV)(self->cnn.port) ));
-	
+
 	XSRETURN(1);
 	PUTBACK;
 	return;
@@ -316,18 +318,20 @@ void xs_ev_cnn_on_connected_cb(ev_cnn *cnn, struct sockaddr *peer) {
 				ip[0] = 0;
 				warn("Bad sa family: %d", peer->sa_family);
 		}
-		
-		ENTER;
-		SAVETMPS;
-		PUSHMARK(SP);
-		EXTEND(SP, 3);
-			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
-			PUSHs( sv_2mortal( newSVpv( ip,0 ) ) );
-			PUSHs( sv_2mortal( newSVuv( port ) ) );
-		PUTBACK;
-		call_sv( self->connected, G_DISCARD | G_VOID );
-		FREETMPS;
-		LEAVE;
+
+		if (self->call_connected) {
+			ENTER;
+			SAVETMPS;
+			PUSHMARK(SP);
+			EXTEND(SP, 3);
+				PUSHs( sv_2mortal( newRV_inc(self->self) ) );
+				PUSHs( sv_2mortal( newSVpv( ip,0 ) ) );
+				PUSHs( sv_2mortal( newSVuv( port ) ) );
+			PUTBACK;
+			call_sv( self->connected, G_DISCARD | G_VOID );
+			FREETMPS;
+			LEAVE;
+		}
 	}
 
 #if XSEV_CON_HOOKS
@@ -358,15 +362,15 @@ void xs_ev_cnn_postpone_cb ( struct ev_loop *loop,  ev_timer *w, int revents) {
 	dObjBy(xs_ev_cnn, self, w, postpone_timer);
 	ev_timer_stop( loop, w );
 	dSP;
-	
+
 	ENTER;
 	SAVETMPS;
 	SV **sp1 = PL_stack_sp;
-	
+
 	AV *postpone = (AV *) sv_2mortal((SV *)self->postpone);
-	
+
 	self->postpone = 0;
-	
+
 	while (av_len( postpone ) > -1) {
 		AV *pp = (AV *) SvRV(sv_2mortal(av_shift( postpone )));
 		SV *cb = sv_2mortal(av_shift(pp));
@@ -382,9 +386,9 @@ void xs_ev_cnn_postpone_cb ( struct ev_loop *loop,  ev_timer *w, int revents) {
 		FREETMPS;
 		LEAVE;
 	}
-	
+
 	PL_stack_sp = sp1;
-	
+
 	FREETMPS;
 	LEAVE;
 }
