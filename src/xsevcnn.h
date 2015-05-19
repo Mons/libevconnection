@@ -35,7 +35,6 @@ usage:
 	\
 	SV *rbuf;\
 	\
-	bool call_connected;\
 	SV *connected;\
 	SV *disconnected;\
 	SV *connfail;\
@@ -96,13 +95,12 @@ typedef struct {
 		cnn->rbuf = SvPVX(self->rbuf); \
 		cnn->rlen = SvLEN(self->rbuf); \
 		\
-		self->call_connected = true; \
 		if ((key = hv_fetchs(conf, "connected", 0)) && SvROK(*key)) SvREFCNT_inc(self->connected = *key);\
 		if ((key = hv_fetchs(conf, "disconnected", 0)) && SvROK(*key)) SvREFCNT_inc(self->disconnected = *key);\
 		if ((key = hv_fetchs(conf, "connfail", 0)) && SvROK(*key)) SvREFCNT_inc(self->connfail = *key);\
 		\
 		cnn->on_connected = (c_cb_conn_t) xs_ev_cnn_on_connected_cb;\
-		cnn->on_disconnect = (c_cb_err_t) xs_ev_cnn_on_disconnect_cb;\
+		cnn->on_disconnect = (c_cb_discon_t) xs_ev_cnn_on_disconnect_cb;\
 		cnn->on_connfail = (c_cb_err_t) xs_ev_cnn_on_connfail_cb;\
 		\
 		if ((key = hv_fetch(conf, "host", 4, 0)) && SvOK(*key)) {\
@@ -263,7 +261,7 @@ XS(XS_ev_cnn_port)
 } STMT_END
 
 
-void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error) {
+void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error, const char *reason) {
 	xs_ev_cnn * self = (xs_ev_cnn *) cnn;
 	dSP;
 #if XSEV_CON_HOOKS
@@ -276,7 +274,11 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error) {
 		PUSHMARK(SP);
 		EXTEND(SP, 2);
 			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
-			PUSHs( sv_2mortal( newSVpv( strerror(error),0 ) ) );
+			if (reason != NULL) {
+				PUSHs( sv_2mortal( newSVpv( reason,0 ) ) );
+			} else {
+				PUSHs( sv_2mortal( newSVpv( strerror(error),0 ) ) );
+			}
 		PUTBACK;
 		errno = error;
 		call_sv( self->disconnected, G_DISCARD | G_VOID );
@@ -319,19 +321,17 @@ void xs_ev_cnn_on_connected_cb(ev_cnn *cnn, struct sockaddr *peer) {
 				warn("Bad sa family: %d", peer->sa_family);
 		}
 
-		if (self->call_connected) {
-			ENTER;
-			SAVETMPS;
-			PUSHMARK(SP);
-			EXTEND(SP, 3);
-				PUSHs( sv_2mortal( newRV_inc(self->self) ) );
-				PUSHs( sv_2mortal( newSVpv( ip,0 ) ) );
-				PUSHs( sv_2mortal( newSVuv( port ) ) );
-			PUTBACK;
-			call_sv( self->connected, G_DISCARD | G_VOID );
-			FREETMPS;
-			LEAVE;
-		}
+		ENTER;
+		SAVETMPS;
+		PUSHMARK(SP);
+		EXTEND(SP, 3);
+			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
+			PUSHs( sv_2mortal( newSVpv( ip,0 ) ) );
+			PUSHs( sv_2mortal( newSVuv( port ) ) );
+		PUTBACK;
+		call_sv( self->connected, G_DISCARD | G_VOID );
+		FREETMPS;
+		LEAVE;
 	}
 
 #if XSEV_CON_HOOKS

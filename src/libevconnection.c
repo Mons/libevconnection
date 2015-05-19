@@ -112,14 +112,14 @@ static void ev_cnn_ns_state_cb(ev_cnn *self, int s, int read, int write) {
 static void ns_io_cb (EV_P_ ev_io *w, int revents) {
 	io_ptr * iop = (io_ptr *) w;
 	dSELFby(w, dns.ios[ iop->id ]);
-	
+
 	ares_socket_t rfd = ARES_SOCKET_BAD, wfd = ARES_SOCKET_BAD;
-	
+
 	if (revents & EV_READ)  rfd = w->fd;
 	if (revents & EV_WRITE) wfd = w->fd;
-	
+
 	ares_process_fd(self->dns.ares.channel, rfd, wfd);
-	
+
 	return;
 }
 
@@ -128,9 +128,9 @@ static void ns_tw_cb (EV_P_ ev_timer *w, int revents) {
 	fd_set readers, writers;
 	FD_ZERO(&readers);
 	FD_ZERO(&writers);
-	
+
 	ares_process(self->dns.ares.channel, &readers, &writers);
-	
+
 	return;
 }
 
@@ -144,13 +144,13 @@ void ev_cnn_init(ev_cnn *self) {
 	self->ipv4 = 2;
 	self->ipv6 = 1;
 	self->wnow = 1;
-	
+
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
 	self->dns.ares.options.lookups = strdup("fb");
 	self->dns.timeout.tv_sec  = self->connect_timeout;
 	self->dns.timeout.tv_usec = (self->connect_timeout - (int)self->connect_timeout) * 1e6;
-	
+
 	int i;
 	for (i=0;i<IOMAX;i++) {
 		ev_init(&self->dns.ios[i].io,ns_io_cb);
@@ -158,7 +158,7 @@ void ev_cnn_init(ev_cnn *self) {
 		self->dns.ios[i].id = i;
 	}
 	ev_init(&self->dns.tw,ns_tw_cb);
-	
+
 	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS );
 }
 
@@ -171,14 +171,14 @@ void ev_cnn_clean(ev_cnn *self) {
 			if (ev_is_active( &iop->io )) {
 				ev_io_stop(self->loop, &iop->io);
 			}
-			
+
 		}
 	}
-	
+
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
 	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
-	
+
 	ares_destroy(self->dns.ares.channel);
 	ares_destroy_options(&self->dns.ares.options);
 	if (self->ai_top) freeaddrinfo(self->ai_top);
@@ -200,14 +200,14 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 		return;
 	}
 	int i,err;
-	
+
 	struct addrinfo ** curr = &self->ai_top;
-	
+
 	struct sockaddr_in * sin;
 	struct sockaddr_in6 * sin6;
-	
+
 	char ip[INET6_ADDRSTRLEN];
-	
+
 	cwarn("Found address name %s\n", hostent->h_name);
 	for (i = 0; hostent->h_addr_list[i]; ++i) {
 		inet_ntop(hostent->h_addrtype, hostent->h_addr_list[i], ip, sizeof(ip));
@@ -239,21 +239,21 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 		else {
 			err = EAI_FAMILY;
 		}
-		
+
 		if (err) {
 			cwarn("gai: %s",gai_strerror(err));
 		}
 	}
-	
+
 	do_connect(self);
 }
 
 static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned char *abuf, int alen) {
 	cwarn("callback aaaa %d",alen);
-	
+
 	struct ares_addr6ttl a[16];
 	int count = 16;
-	
+
 	if(status != ARES_SUCCESS || ( status = ares_parse_aaaa_reply(abuf, alen, 0, a, &count) ) != ARES_SUCCESS) {
 		cwarn("Failed to lookup AAAA %s: %s\n", self->host, ares_strerror(status));
 		if (self->ipv4 && self->ipv4 < self->ipv6) {
@@ -264,12 +264,12 @@ static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned c
 		}
 		return;
 	}
-	
+
 	int minttl = 86400;
 	struct addrinfo ** curr = &self->ai_top;
 	struct sockaddr_in6 * sin6;
 	char ip[INET6_ADDRSTRLEN];
-		
+
 	cwarn("ok %d", count);
 	int i,err;
 	for (i = 0; i < count; i++) {
@@ -289,10 +289,10 @@ static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned c
 			cwarn("failed to convert address: %s",strerror(errno));
 		}
 	}
-	
+
 	self->dns.expire = time(NULL) + minttl;
 	//cwarn("set expire to %ld + %d = %ld", time(NULL), minttl, self->dns.expire);
-	
+
 	do_connect(self);
 }
 
@@ -314,7 +314,7 @@ static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char
 	struct addrinfo **curr = &self->ai_top;
 	char ip[INET_ADDRSTRLEN];
 	struct sockaddr_in * sin;
-		
+
 	debug("ipv4 ok %d", count);
 	int i,err;
 	for (i = 0; i < count; i++) {
@@ -336,7 +336,7 @@ static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char
 	}
 	self->dns.expire = time(NULL) + minttl;
 	//cwarn("set expire to %ld + %d = %ld", time(NULL), minttl, self->dns.expire);
-	
+
 	do_connect(self);
 }
 
@@ -376,8 +376,8 @@ void do_resolve (ev_cnn *self) {
 		do_connect(self);
 		return;
 	}
-	
-	
+
+
 	if (self->ai_top) {
 		freeaddrinfo( self->ai_top );
 		self->ai_top = self->ai = 0;
@@ -416,11 +416,11 @@ static void on_connect_failed(ev_cnn * self, int err) {
 	else {
 		set_state(INITIAL);
 		if (self->on_disconnect)
-			self->on_disconnect(self,err);
+			self->on_disconnect(self,err, NULL);
 	}
 }
 
-void on_connect_reset(ev_cnn * self, int err) {
+void on_connect_reset(ev_cnn * self, int err, const char *reason) {
 	if (self->ww.fd > -1) close(self->ww.fd);
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
@@ -435,12 +435,12 @@ void on_connect_reset(ev_cnn * self, int err) {
 		ev_timer_init(&self->tw,on_reconnect_timer,0.,0.); // after reset, try to reconnect immediately
 		ev_timer_start(self->loop,&self->tw);
 		if (self->on_disconnect)
-			self->on_disconnect(self,err);
+			self->on_disconnect(self,err,reason);
 	}
 	else {
 		set_state(INITIAL);
 		if (self->on_disconnect)
-			self->on_disconnect(self,err);
+			self->on_disconnect(self,err,reason);
 	}
 
 }
@@ -459,7 +459,7 @@ static void on_rw_timer(  struct ev_loop *loop, ev_timer *w, int revents ) {
 	dSELFby(w,tw);
 	cwarn("on rw timer %p -> %p", w, self);
 	ev_timer_stop( loop, w );
-	on_connect_reset(self,ETIMEDOUT);
+	on_connect_reset(self,ETIMEDOUT,NULL);
 }
 
 static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
@@ -474,7 +474,7 @@ static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 		if (self->on_read) {
 			self->on_read(self,rc);
 			if (self->ruse == self->rlen)
-				on_connect_reset(self, ENOBUFS);//ENOSPC
+				on_connect_reset(self, ENOBUFS,NULL);//ENOSPC
 		}
 	}
 	else if ( rc != 0 ) {
@@ -485,7 +485,7 @@ static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 				return;
 			default:
 				//ev_io_stop(loop,w);
-				on_connect_reset(self,errno);
+				on_connect_reset(self,errno,NULL);
 		}
 	}
 	else {
@@ -494,7 +494,7 @@ static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 			self->on_read(self,0);
 		//on_read(self,0);
 		ev_io_stop(loop,w);
-		on_connect_reset(self,ECONNABORTED);
+		on_connect_reset(self,ECONNABORTED,NULL);
 	}
 }
 
@@ -502,28 +502,28 @@ static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
 	//cwarn("on con io %p -> %p (fd: %d)", w, self, w->fd);
-	
+
 	struct sockaddr peer;
 	socklen_t addrlen = sizeof(peer);
-	
+
 	again:
 	if( getpeername( w->fd, &peer, &addrlen) == 0 ) {
-		
+
 		ev_timer_stop( loop, &self->tw );
 		ev_io_stop( loop, w );
-		
+
 		ev_timer_init( &self->tw,on_rw_timer,self->rw_timeout,0 );
-		
+
 		ev_io_init( &self->rw, on_read_io, w->fd, EV_READ );
 		ev_io_start( EV_DEFAULT, &self->rw );
-		
+
 		ev_io_init( &self->ww, on_write_io, w->fd, EV_WRITE );
-		
+
 		set_state(CONNECTED);
-		
+
 		if (self->on_connected)
 			self->on_connected(self, &peer);
-		
+
 	} else {
 		switch( errno ) {
 			case EINTR:
@@ -556,7 +556,7 @@ void do_connect(ev_cnn * self) {
 		self->ai = self->ai_top;
 	}
 	struct addrinfo *ai = self->ai;
-	
+
 	/*
 	cwarn("connecting to %s with timeout %f (ai = %p have %d addrs, use %d)",self->host, self->connect_timeout, self->ai, 0,0);
 		char ip[INET6_ADDRSTRLEN];
@@ -577,25 +577,25 @@ void do_connect(ev_cnn * self) {
 				cwarn("Bad sa family: %d", self->addrs[ self->addri ].sa_family);
 		}
 	*/
-	
+
 	self->state = CONNECTING;
 	if (self->connect_timeout > 0) {
 		ev_timer_init( &self->tw, on_connect_timer, self->connect_timeout, 0. );
 		ev_timer_start( self->loop, &self->tw );
 	}
-	
+
 	//cwarn("create socket of family %d",ai->ai_family);
-	
+
 	do {
 		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	} while (sock < 0 && errno == EINTR);
-	
+
 	if (sock < 0) {
 		on_connect_failed(self, errno);
 		return;
 	}
-	
-	
+
+
 	fcntl(sock, F_SETFL, O_NONBLOCK | O_RDWR);
 	struct linger linger = { 0 };
 	linger.l_onoff = 1;
@@ -603,9 +603,9 @@ void do_connect(ev_cnn * self) {
 	if( setsockopt(sock, SOL_SOCKET, SO_LINGER,(const char *) &linger,sizeof(linger)) == -1) {
 		cwarn("set linger failed: %s", strerror(errno));
 	}
-	
+
 	again:
-	
+
 	if (
 		connect( sock, ai->ai_addr, ai->ai_addrlen) == 0
 	) {
@@ -619,7 +619,7 @@ void do_connect(ev_cnn * self) {
 			case EWOULDBLOCK:
 				// async connect now in progress
 				//client->state = CLIENT_CONNECTING;
-				
+
 				break;
 			case EINTR:
 				goto again;
@@ -660,21 +660,21 @@ void do_disconnect(ev_cnn * self) {
 	}
 	set_state(INITIAL);
 	if (self->on_disconnect)
-		self->on_disconnect(self,0);
+		self->on_disconnect(self,0,NULL);
 }
 
 
 static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
-	
+
 	ssize_t wr;
 	int iovcur;
 	struct iovec *iov;
-	
+
 	//cwarn("on ww io %p -> %p (fd: %d) [ wbufs: %d of %d ]", w, self, w->fd, self->wuse, self->wlen);
-	
+
 	ev_timer_stop( self->loop, &self->tw );
-	
+
 	again:
 	wr = writev(w->fd,self->wbuf,self->wuse);
 	if (wr > -1) {
@@ -698,7 +698,7 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 			ev_io_stop(loop,w);
 		} else {
 			memmove( self->wbuf, self->wbuf + iovcur, self->wuse * sizeof(struct iovec) );
-			
+
 			ev_timer_again( self->loop,&self->tw ); //written not all, so restart timer
 			return;
 		}
@@ -712,7 +712,7 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 				return;
 			default:
 				cwarn("Connection failed on write: %s",strerror(errno));
-				on_connect_reset(self,errno);
+				on_connect_reset(self,errno,NULL);
 				return;
 		}
 	}
@@ -734,12 +734,12 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 		self->wuse++;
 		return;
 	}
-	
+
 	ssize_t wr = 0;
-	
+
 	if (self->wnow) {
 		again:
-		
+
 		wr = write( self->ww.fd, buf, len );
 		//cwarn("writing %d",len);
 		if ( wr == len ) {
@@ -762,20 +762,20 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 					break;
 				default:
 					cwarn("write failed: %s", strerror(errno));
-					on_connect_reset(self,errno);
+					on_connect_reset(self,errno,NULL);
 					return;
 			}
 		}
 	}
-	
+
 	self->wlen = 2;
 	self->wbuf = calloc( self->wlen, sizeof(struct iovec) );
 	self->wbuf[0].iov_base = memdup(buf + wr,len - wr);
 	self->wbuf[0].iov_len  = len - wr;
 	self->wuse = 1;
-	
+
 	ev_timer_again(self->loop,&self->tw);
 	ev_io_start(self->loop,&self->ww);
-	
+
 	return;
 }
