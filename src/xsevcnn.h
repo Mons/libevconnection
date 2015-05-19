@@ -45,10 +45,10 @@ usage:
 typedef struct {
 	xs_ev_cnn_struct;
 #if XSEV_CON_HOOKS
-	void (*on_disconnect_before)(void *, int);
-	void (*on_disconnect_after)(void *, int);
-	void (*on_connect_before)(void *, struct sockaddr *);
-	void (*on_connect_after)(void *, struct sockaddr *);
+	c_cb_discon_t on_disconnect_before;
+	c_cb_discon_t on_disconnect_after;
+	c_cb_conn_t on_connect_before;
+	c_cb_conn_t on_connect_after;
 #endif
 } xs_ev_cnn;
 
@@ -266,7 +266,7 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error, const char *reason) {
 	dSP;
 #if XSEV_CON_HOOKS
 	if (self->on_disconnect_before)
-		self->on_disconnect_before( (void *) self, error );
+		self->on_disconnect_before( (void *) self, error, reason );
 #endif
 	if (self->disconnected) {
 		ENTER;
@@ -289,7 +289,7 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error, const char *reason) {
 	}
 #if XSEV_CON_HOOKS
 	if (self->on_disconnect_after)
-		self->on_disconnect_after( (void *) self, error );
+		self->on_disconnect_after( (void *) self, error, reason );
 #endif
 }
 
