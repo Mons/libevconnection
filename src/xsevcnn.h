@@ -274,7 +274,9 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error, const char *reason) {
 		PUSHMARK(SP);
 		EXTEND(SP, 2);
 			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
-			if (reason != NULL) {
+			if (error != 0 && reason != NULL) {
+				PUSHs( sv_2mortal( newSVpvf( "%s: %s", strerror(error), reason ) ) );
+			} else if (reason != NULL) {
 				PUSHs( sv_2mortal( newSVpv( reason,0 ) ) );
 			} else {
 				PUSHs( sv_2mortal( newSVpv( strerror(error),0 ) ) );
