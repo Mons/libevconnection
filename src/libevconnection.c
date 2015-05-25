@@ -425,7 +425,15 @@ void on_connect_reset(ev_cnn * self, int err, const char *reason) {
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
 	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
-	cwarn("connection reset: %s (reconnect: %f)",strerror(err),self->reconnect);
+
+	if (err != 0 && reason != NULL) {
+		cwarn("connection reset: %s: %s (reconnect: %f)",strerror(err),reason,self->reconnect);
+	} else if (reason != NULL) {
+		cwarn("connection reset: %s (reconnect: %f)",reason,self->reconnect);
+	} else {
+		cwarn("connection reset: %s (reconnect: %f)",strerror(err),self->reconnect);
+	}
+
 	if (self->reconnect > 0) {
 		set_state(RECONNECTING);
 		if (self->tw.active) {
