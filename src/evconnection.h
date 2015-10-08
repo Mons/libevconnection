@@ -19,12 +19,22 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#ifndef cnntrace
+#define cnntrace(cnn, fmt, ...) do { \
+	warn( "[TRC] %0.6f %s:%d: %p S:%s:%d " fmt "%s", ev_now(EV_DEFAULT), __FILE__, __LINE__, cnn, strstate( ((ev_cnn*)cnn)->state ), ((ev_cnn*)cnn)->state, ##__VA_ARGS__, fmt[strlen(fmt) - 1] != 0x0a ? "\n" : "" ); \
+} while (0)
+#endif
+
 #ifndef cwarn
 #define cwarn(fmt, ...)   do{ \
-	fprintf(stderr, "[WARN] %s:%d: ", __FILE__, __LINE__); \
+	fprintf(stderr, "[WARN] %0.6f %s:%d: ", ev_now(EV_DEFAULT), __FILE__, __LINE__); \
 	fprintf(stderr, fmt, ##__VA_ARGS__); \
 	if (fmt[strlen(fmt) - 1] != 0x0a) { fprintf(stderr, "\n"); } \
 	} while(0)
+#endif
+
+#ifndef warn
+#define warn cwarn
 #endif
 
 #ifndef likely
@@ -48,6 +58,19 @@ typedef enum {
 	DISCONNECTED,
 	RECONNECTING
 } CnnState;
+
+const char * strstate( CnnState x ) {
+	switch (x) {
+		case INITIAL: return "INITIAL";
+		case RESOLVING: return "RESOLVING";
+		case CONNECTING: return "CONNECTING";
+		case CONNECTED: return "CONNECTED";
+		case DISCONNECTING: return "DISCONNECTING";
+		case DISCONNECTED: return "DISCONNECTED";
+		case RECONNECTING: return "RECONNECTING";
+		default: return "UNKNOWN";
+	}
+}
 
 typedef void (*c_cb_err_t)(void *, int);
 typedef void (*c_cb_conn_t)(void *, struct sockaddr *);
@@ -133,6 +156,13 @@ void ev_cnn_init(ev_cnn *self);
 void ev_cnn_clean(ev_cnn *self);
 
 void do_connect(ev_cnn * self);
+void do_disconnect(ev_cnn * self);
+
 void do_write(ev_cnn *self, char *buf, size_t len);
+
+void on_connect_reset(ev_cnn * self, int err);
+
+void do_enable_rw_timer(ev_cnn * self);
+void do_disable_rw_timer(ev_cnn * self);
 
 #endif
