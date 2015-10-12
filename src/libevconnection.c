@@ -49,7 +49,6 @@ void do_disable_rw_timer(ev_cnn * self) {
 	}
 }
 
-
 static void ev_cnn_ns_state_cb(ev_cnn *self, int s, int read, int write) {
 	struct timeval *tvp, tv;
 	memset(&tv,0,sizeof(tv));
@@ -150,6 +149,7 @@ void ev_cnn_init(ev_cnn *self) {
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
 	self->dns.ares.options.lookups = strdup("fb");
+	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000);
 	self->dns.timeout.tv_sec  = self->connect_timeout;
 	self->dns.timeout.tv_usec = (self->connect_timeout - (int)self->connect_timeout) * 1e6;
 	
@@ -161,7 +161,7 @@ void ev_cnn_init(ev_cnn *self) {
 	}
 	ev_init(&self->dns.tw,ns_tw_cb);
 	
-	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS );
+	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS );
 }
 
 void ev_cnn_clean(ev_cnn *self) {
@@ -196,12 +196,31 @@ void ev_cnn_clean(ev_cnn *self) {
 	}
 }
 
+int ares_to_errno(int err) {
+	switch(err) {
+		case ARES_ENODATA: return ENODATA;
+		case ARES_EFORMERR: return EILSEQ; // The query completed but the server claims that the query was malformatted.
+		case ARES_ESERVFAIL: return EHOSTDOWN; // The query completed but the server claims to have experienced a failure. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
+		case ARES_ENOTFOUND: return ENOENT; // The query completed but the queried-for domain name was not found.
+		case ARES_ENOTIMP: return ENOSYS; // The query completed but the server does not implement the operation requested by the query. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
+		case ARES_EREFUSED: return ECONNREFUSED; // The query completed but the server refused the query. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
+		case ARES_EBADNAME: return EBADRQC; // The query name name could not be encoded as a domain name, either because it contained a zero-length label or because it contained a label of more than 63 characters.
+		case ARES_ETIMEOUT: return ETIMEDOUT; // No name servers responded within the timeout period.
+		case ARES_ECONNREFUSED: return ECONNREFUSED; // No name servers could be contacted.
+		case ARES_ENOMEM: return ENOMEM; // Memory was exhausted.
+		case ARES_ECANCELLED: return ECANCELED; // The query was cancelled.
+		case ARES_EDESTRUCTION: return ESHUTDOWN; // The name service channel channel is being destroyed; the query will not be completed.
+		default: return err;
+	}
+}
+
 static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hostent *hostent) {
-	cwarn("callback ghbn");
+	// cwarn("callback ghbn");
 	if(!hostent || status != ARES_SUCCESS) {
-		cwarn("Failed to lookup %s: %s\n", self->host, ares_strerror(status));
+		cwarn("Failed to lookup ghbn %s: %s\n", self->host, ares_strerror(status));
 		if (status == ARES_ECANCELLED) return;
-		on_connect_failed(self,status);
+		set_state(CONNECTING);
+		on_connect_failed(self,ares_to_errno(status));
 		return;
 	}
 	int i,err;
@@ -254,7 +273,7 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 }
 
 static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned char *abuf, int alen) {
-	cwarn("callback aaaa %d",alen);
+	// cwarn("callback aaaa %d",alen);
 	
 	struct ares_addr6ttl a[16];
 	int count = 16;
@@ -303,11 +322,11 @@ static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned c
 }
 
 static void ev_ares_a_cb (ev_cnn * self, int status, int timeouts, unsigned char *abuf, int alen) {
-	debug("callback a %d (%p:%s)",alen,self->host,self->host);
+	// debug("callback a %d (%p:%s)",alen,self->host,self->host);
 	struct ares_addrttl a[16];
 	int count = 16;
 	if(status != ARES_SUCCESS || ( status = ares_parse_a_reply(abuf, alen, 0, a, &count) ) != ARES_SUCCESS) {
-		cwarn("Failed to lookup A %p:%s: %s\n", self->host,self->host, ares_strerror(status));
+		cwarn("Failed to lookup A %s: %s\n", self->host, ares_strerror(status));
 		if (status == ARES_ECANCELLED) return;
 		if (self->ipv6 && self->ipv6 <= self->ipv4) {
 			_resolve_aaaa(self);
@@ -365,6 +384,7 @@ static void _do_resolve (ev_cnn *self) {
 	if (unlikely( self->state != RESOLVING )) return;
 	cnntrace(self, "_do_resolve: %s", self->host);
 	if (!self->host) {
+		set_state(CONNECTING);
 		on_connect_failed(self,EDESTADDRREQ);
 		return;
 	}
@@ -397,6 +417,7 @@ static void _do_resolve (ev_cnn *self) {
 		_resolve_aaaa(self);
 	}
 	else {
+		set_state(CONNECTING);
 		on_connect_failed(self,EPFNOSUPPORT);
 	}
 }
@@ -413,6 +434,11 @@ static void on_connect_failed(ev_cnn * self, int err) {
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
 	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
+	if (self->state == RESOLVING) {
+		cnntrace(self, "cancel ares by connfail: %s",strerror(err));
+		ares_cancel(self->dns.ares.channel);
+	}
+
 	cnntrace(self, "on_connect_failed: %s. reconnect = %f", strerror(err), self->reconnect);
 	if (self->reconnect > 0) {
 		set_state(DISCONNECTING);
@@ -423,8 +449,12 @@ static void on_connect_failed(ev_cnn * self, int err) {
 		}
 		if (self->state == DISCONNECTING) {
 			set_state(RECONNECTING);
-			ev_timer_init(&self->tw,on_reconnect_timer,self->reconnect,0.);
-			ev_timer_start(self->loop,&self->tw);
+			if (err == ETIMEDOUT) {
+				_do_connect(self);
+			} else {
+				ev_timer_init(&self->tw,on_reconnect_timer,self->reconnect,0.);
+				ev_timer_start(self->loop,&self->tw);
+			}
 		} else {
 			cnntrace(self,"not doing do_reconnect after calling on_connfail");
 		}
@@ -451,6 +481,13 @@ void on_connect_reset(ev_cnn * self, int err) {
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
 	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
+
+	while (self->wuse > 0) {
+		self->wuse--;
+		free(self->wbuf[self->wuse].iov_base);
+		self->wbuf[self->wuse].iov_len = 0;
+	}
+
 	cnntrace(self, "connection reset: %s (reconnect: %f)",strerror(err),self->reconnect);
 	if (self->reconnect > 0) {
 		set_state(DISCONNECTING);
@@ -468,16 +505,6 @@ void on_connect_reset(ev_cnn * self, int err) {
 		} else {
 			cnntrace(self,"not doing _do_connect after calling on_disconnect");
 		}
-
-		// set_state(RECONNECTING);
-		// if (self->tw.active) {
-		// 	ev_timer_stop(self->loop,&self->tw);
-		// }
-		// //ev_timer_init(&self->tw,on_reconnect_timer,self->reconnect,0.);
-		// ev_timer_init(&self->tw,on_reconnect_timer,0.,0.); // after reset, try to reconnect immediately
-		// ev_timer_start(self->loop,&self->tw);
-		// if (self->on_disconnect)
-		// 	self->on_disconnect(self,err);
 	}
 	else {
 		if (self->on_disconnect) {
@@ -555,7 +582,7 @@ static void on_read_io( struct ev_loop *loop, ev_io *w, int revents ) {
 
 static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
-	//cwarn("on con io %p -> %p (fd: %d)", w, self, w->fd);
+	// cwarn("on con io %p -> %p (fd: %d)", w, self, w->fd);
 	
 	struct sockaddr peer;
 	socklen_t addrlen = sizeof(peer);
@@ -569,7 +596,7 @@ static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 		ev_timer_init( &self->tw,on_rw_timer,self->rw_timeout,0 );
 		
 		ev_io_init( &self->rw, on_read_io, w->fd, EV_READ );
-		ev_io_start( EV_DEFAULT, &self->rw );
+		ev_io_start( loop, &self->rw );
 		
 		ev_io_init( &self->ww, on_write_io, w->fd, EV_WRITE );
 		
@@ -632,6 +659,12 @@ static void _do_connect(ev_cnn * self) {
 	self->now = now;
 
 	//cwarn("connecting to %s with timeout %f (addrc=%d, exp in %ld - %ld = %ld)",self->host, self->connect_timeout, self->addrc, self->now, self->dns.expire, self->now - self->dns.expire);
+	if (self->connect_timeout > 0 && !self->tw.active) {
+		cnntrace(self, "start connect timeout %0.4fs",self->connect_timeout);
+		ev_timer_init( &self->tw, on_connect_timer, self->connect_timeout, 0. );
+		ev_timer_start( self->loop, &self->tw );
+	}
+
 	if (!self->ai_top || self->now > self->dns.expire) {
 		set_state(RESOLVING);
 		_do_resolve(self);
@@ -643,13 +676,7 @@ static void _do_connect(ev_cnn * self) {
 		self->ai = self->ai_top;
 	}
 	struct addrinfo *ai = self->ai;
-	
-	if (self->connect_timeout > 0) {
-		cnntrace(self, "start connect timeout %0.4fs",self->connect_timeout);
-		ev_timer_init( &self->tw, on_connect_timer, self->connect_timeout, 0. );
-		ev_timer_start( self->loop, &self->tw );
-	}
-	
+		
 	//cwarn("create socket of family %d",ai->ai_family);
 	
 	do {
@@ -752,40 +779,71 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 	dSELFby(w,ww);
 	
 	ssize_t wr;
-	int iovcur;
+	int iovcur, iov_total = 0;
 	struct iovec *iov;
 	
 	//cwarn("on ww io %p -> %p (fd: %d) [ wbufs: %d of %d ]", w, self, w->fd, self->wuse, self->wlen);
 	
 	ev_timer_stop( self->loop, &self->tw );
-	
-	again:
-	wr = writev(w->fd,self->wbuf,self->wuse);
+
+	struct iovec *head_ptr = self->wbuf;
+
+	cwarn("need: %d from %p", self->wuse, self->wbuf);
+
+	again: {
+
+	int iovs_to_write = self->wuse >= IOV_MAX ? IOV_MAX : self->wuse;
+
+	// cwarn("wr = %d from iov = %p", iovs_to_write, head_ptr);
+
+	// DEBUG1
+	// wr = writev(w->fd, head_ptr, iovs_to_write > 1 ? iovs_to_write -1 : 1);
+
+	// DEBUG2
+	// if (head_ptr[iovs_to_write-1].iov_len > 1) {
+	// 	head_ptr[iovs_to_write-1].iov_len--;
+	// 	wr = writev(w->fd, head_ptr, iovs_to_write);
+	// 	head_ptr[iovs_to_write-1].iov_len++;
+	// } else {
+	// 	wr = writev(w->fd, head_ptr, iovs_to_write);
+	// }
+
+	wr = writev(w->fd, head_ptr, iovs_to_write);
 	if (wr > -1) {
-		//cwarn("written: %zu",wr);
-		for (iovcur = 0; iovcur < self->wuse; iovcur++) {
-			iov = &(self->wbuf[iovcur]);
+		for (iovcur = 0; iovcur < iovs_to_write; iovcur++) {
+			iov = &(head_ptr[iovcur]);
 			if (wr < iov->iov_len) {
-				//cwarn("Written %d of iov size %d",wr,iov->iov_len);
 				memmove( iov->iov_base, iov->iov_base + wr, iov->iov_len - wr );
 				iov->iov_len -= wr;
-				//iovcur--;
 				break;
 			} else {
 				free(iov->iov_base);
 				wr -= iov->iov_len;
 			}
 		}
-		self->wuse -= iovcur;
-		//cwarn("freed %d iovs, left %d",iovcur, self->wuse);
-		if (self->wuse == 0) {
-			ev_io_stop(loop,w);
+		// cwarn("wr = %d, iovcur = %d/%d of %d",wr, iovcur, iovs_to_write, self->wuse);
+		if (iovcur == iovs_to_write && wr == 0) {
+			if ( iovs_to_write == self->wuse) {
+				// cwarn("all done");
+				self->wuse -= iovs_to_write;
+				ev_io_stop(loop,w);
+				return;
+			} else {
+				// cwarn("again");
+				self->wuse -= iovcur;
+				head_ptr   += iovcur;
+				iov_total  += iovcur;
+				goto again;
+			}
 		} else {
-			memmove( self->wbuf, self->wbuf + iovcur, self->wuse * sizeof(struct iovec) );
-			
-			ev_timer_again( self->loop,&self->tw ); //written not all, so restart timer
+			// written partially, finish
+			self->wuse -= iov_total + iovcur;
+			// cwarn("partially %p -> %p / %d", self->wbuf + iov_total + iovcur, self->wbuf, iov_total + iovcur);
+			memmove( self->wbuf, self->wbuf + iov_total + iovcur, self->wuse * sizeof(struct iovec) );
+			ev_timer_again( self->loop, &self->tw ); // written not all, so restart timer
 			return;
 		}
+
 	}
 	else {
 		switch(errno){
@@ -794,14 +852,17 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 			case EAGAIN:
 				ev_timer_again( self->loop,&self->tw );
 				return;
+			case EINVAL:
+				// einval may be a result only of corruption. dump a core is better than hangover
+				abort();
 			default:
 				cnntrace(self, "connection failed while write [io]: %s", strerror(errno));
 				on_connect_reset(self,errno);
 				return;
 		}
 	}
+	}
 }
-
 
 void do_write(ev_cnn *self, char *buf, size_t len) {
 	if ( len == 0 ) len = strlen(buf);
@@ -825,15 +886,15 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 		again:
 		
 		wr = write( self->ww.fd, buf, len );
-		//cwarn("writing %d",len);
+		// cwarn("writing %d",len);
 		if ( wr == len ) {
 			// success
-			//cwarn("written now %zu %u",wr, *((uint32_t *)(buf + 8)) );
+			// cwarn("written now %zu %u",wr, *((uint32_t *)(buf + 8)) );
 			return;
 		}
 		else
 		if (wr > -1) {
-			//cwarn("written part %zu %u",wr, *((uint32_t *)(buf + 8)) );
+			// cwarn("written part %zu %u",wr, *((uint32_t *)(buf + 8)) );
 			//partial write, passthru
 		}
 		else
