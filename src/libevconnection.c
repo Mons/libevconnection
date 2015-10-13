@@ -6,6 +6,15 @@
 #include <time.h>
 #include <fcntl.h>
 
+
+#ifndef IOV_MAX
+#  ifdef UIO_MAX
+#    define IOV_MAX UIO_MAX
+#  else
+#    define IOV_MAX 1024
+#  endif
+#endif
+
 #define dSELFby(ptr,xx) ev_cnn * self = (ev_cnn *) ( (char *) ptr - (ptrdiff_t) &((ev_cnn *) 0)-> xx );
 #define set_state(newstate) do{ cnntrace(self,"switch state to %s:%d", strstate(newstate), newstate); self->state = newstate; } while(0)
 
@@ -34,6 +43,19 @@ static void _do_connect(ev_cnn * self);
 static inline void _resolve_a(ev_cnn *self);
 static inline void _resolve_aaaa(ev_cnn *self);
 static inline void _resolve_ghbn(ev_cnn *self);
+
+const char * strstate( CnnState x ) {
+	switch (x) {
+		case INITIAL: return "INITIAL";
+		case RESOLVING: return "RESOLVING";
+		case CONNECTING: return "CONNECTING";
+		case CONNECTED: return "CONNECTED";
+		case DISCONNECTING: return "DISCONNECTING";
+		case DISCONNECTED: return "DISCONNECTED";
+		case RECONNECTING: return "RECONNECTING";
+		default: return "UNKNOWN";
+	}
+}
 
 void do_enable_rw_timer(ev_cnn * self) {
 	if (self->rw_timeout > 0) {
@@ -145,6 +167,7 @@ void ev_cnn_init(ev_cnn *self) {
 	self->ipv4 = 2;
 	self->ipv6 = 1;
 	self->wnow = 1;
+	self->trace = 0;
 	
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
@@ -747,7 +770,7 @@ void do_disconnect(ev_cnn * self) {
 				cnntrace(self,"not reset state after calling on_disconnect");
 				return;
 			}
-		}		
+		}
 	} else {
 		switch (self->state) {
 			case INITIAL:
