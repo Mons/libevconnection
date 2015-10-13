@@ -53,6 +53,7 @@ int main (int argc, char *argv[]) {
 	char rbuf[256];
 	memset(&cnn,0,sizeof(cnn));
 	ev_cnn_init(&cnn);
+	// cnn.trace = 0;
 	cnn.loop = loop;
 	
 	cnn.host = host;

@@ -6,8 +6,13 @@
 #include <time.h>
 #include <fcntl.h>
 
+
 #ifndef IOV_MAX
-#define IOV_MAX 1024
+#  ifdef UIO_MAX
+#    define IOV_MAX UIO_MAX
+#  else
+#    define IOV_MAX 1024
+#  endif
 #endif
 
 #define dSELFby(ptr,xx) ev_cnn * self = (ev_cnn *) ( (char *) ptr - (ptrdiff_t) &((ev_cnn *) 0)-> xx );
@@ -162,7 +167,8 @@ void ev_cnn_init(ev_cnn *self) {
 	self->ipv4 = 2;
 	self->ipv6 = 1;
 	self->wnow = 1;
-
+	self->trace = 0;
+	
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
 	self->dns.ares.options.lookups = strdup("fb");

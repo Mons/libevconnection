@@ -21,7 +21,9 @@
 
 #ifndef cnntrace
 #define cnntrace(cnn, fmt, ...) do { \
-	warn( "[TRC] %0.6f %s:%d: %p S:%s:%d " fmt "%s", ev_now(EV_DEFAULT), __FILE__, __LINE__, cnn, strstate( ((ev_cnn*)cnn)->state ), ((ev_cnn*)cnn)->state, ##__VA_ARGS__, fmt[strlen(fmt) - 1] != 0x0a ? "\n" : "" ); \
+	if (unlikely((cnn)->trace > 0)) { \
+		warn( "[TRC] %0.6f %s:%d: %p S:%s:%d " fmt "%s", ev_now(EV_DEFAULT), __FILE__, __LINE__, (cnn), strstate( ((ev_cnn*)cnn)->state ), ((ev_cnn*)cnn)->state, ##__VA_ARGS__, fmt[strlen(fmt) - 1] != 0x0a ? "\n" : "" ); \
+	} \
 } while (0)
 #endif
 
@@ -140,6 +142,8 @@ typedef struct {
 		int                  ip6c;
 		time_t               expire;
 	} dns;
+	
+	int trace;
 } ev_cnn;
 
 void ev_cnn_init(ev_cnn *self);
