@@ -57,6 +57,7 @@ typedef struct {
 	newXS(Module "::connect", XS_ev_cnn_connect, file);\
 	newXS(Module "::disconnect", XS_ev_cnn_disconnect, file);\
 	newXS(Module "::reconnect", XS_ev_cnn_reconnect, file);\
+	newXS(Module "::state", XS_ev_cnn_state, file);\
 	newXS(Module "::server", XS_ev_cnn_server, file);\
 	newXS(Module "::host", XS_ev_cnn_host, file);\
 	newXS(Module "::port", XS_ev_cnn_port, file);\
@@ -193,10 +194,27 @@ XS(XS_ev_cnn_reconnect)
 	SP -= items;
 
 	xs_ev_cnn_self(xs_ev_cnn);
+	cnntrace(&self->cnn, "calling disconnect/connect for reconnect");
 	do_disconnect(&self->cnn);
 	do_connect(&self->cnn);
 
 	XSRETURN_UNDEF;
+	PUTBACK;
+	return;
+}
+
+XS(XS_ev_cnn_state);
+XS(XS_ev_cnn_state)
+{
+	dVAR;dXSARGS;
+	if (items != 1) croak_xs_usage(cv,  "self");
+	PERL_UNUSED_VAR(ax);
+	SP -= items;
+	
+	xs_ev_cnn_self(xs_ev_cnn);
+	ST(0) = sv_2mortal(newSVpvf("%s",strstate( self->cnn.state )));
+	
+	XSRETURN(1);
 	PUTBACK;
 	return;
 }
@@ -274,7 +292,7 @@ void xs_ev_cnn_on_disconnect_cb(ev_cnn *cnn, int error, const char *reason) {
 		PUSHMARK(SP);
 		EXTEND(SP, 2);
 			PUSHs( sv_2mortal( newRV_inc(self->self) ) );
-			if (error != 0 && reason != NULL) {
+			if (error > 0 && reason != NULL) {
 				PUSHs( sv_2mortal( newSVpvf( "%s: %s", strerror(error), reason ) ) );
 			} else if (reason != NULL) {
 				PUSHs( sv_2mortal( newSVpv( reason,0 ) ) );
