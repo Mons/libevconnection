@@ -510,15 +510,13 @@ void on_connect_reset(ev_cnn * self, int err, const char *reason) {
 		free(self->wbuf[self->wuse].iov_base);
 		self->wbuf[self->wuse].iov_len = 0;
 	}
-	
-	cnntrace(self, "connection reset: %s (reconnect: %f)",strerror(err),self->reconnect);
 
 	if (err != 0 && reason != NULL) {
-		cwarn("connection reset: %s: %s (reconnect: %f)",strerror(err),reason,self->reconnect);
+		cnntrace(self, "connection reset: %s: %s (reconnect: %f)",strerror(err),reason,self->reconnect);
 	} else if (reason != NULL) {
-		cwarn("connection reset: %s (reconnect: %f)",reason,self->reconnect);
+		cnntrace(self, "connection reset: %s (reconnect: %f)",reason,self->reconnect);
 	} else {
-		cwarn("connection reset: %s (reconnect: %f)",strerror(err),self->reconnect);
+		cnntrace(self, "connection reset: %s (reconnect: %f)",strerror(err),self->reconnect);
 	}
 	
 	if (self->reconnect > 0) {
