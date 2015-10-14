@@ -15,6 +15,11 @@
 #  endif
 #endif
 
+#ifndef EBADRQC
+#  define EBADRQC EINVAL
+#endif
+
+
 #define dSELFby(ptr,xx) ev_cnn * self = (ev_cnn *) ( (char *) ptr - (ptrdiff_t) &((ev_cnn *) 0)-> xx );
 #define set_state(newstate) do{ cnntrace(self,"switch state to %s:%d", strstate(newstate), newstate); self->state = newstate; } while(0)
 
