@@ -8,8 +8,8 @@
 
 
 #ifndef IOV_MAX
-#  ifdef UIO_MAX
-#    define IOV_MAX UIO_MAX
+#  ifdef UIO_MAXIOV
+#    define IOV_MAX UIO_MAXIOV
 #  else
 #    define IOV_MAX 1024
 #  endif
