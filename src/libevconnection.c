@@ -823,8 +823,6 @@ static void on_write_io( struct ev_loop *loop, ev_io *w, int revents ) {
 
 	struct iovec *head_ptr = self->wbuf;
 
-	cwarn("need: %d from %p", self->wuse, self->wbuf);
-
 	again: {
 
 	int iovs_to_write = self->wuse >= IOV_MAX ? IOV_MAX : self->wuse;

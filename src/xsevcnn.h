@@ -61,6 +61,7 @@ typedef struct {
 	newXS(Module "::server", XS_ev_cnn_server, file);\
 	newXS(Module "::host", XS_ev_cnn_host, file);\
 	newXS(Module "::port", XS_ev_cnn_port, file);\
+	newXS(Module "::ok", XS_ev_cnn_ok, file);\
 } STMT_END
 
 
@@ -147,6 +148,23 @@ typedef struct {
 			av_push(pp,cb); \
 			av_push(pp,&PL_sv_undef); \
 			av_push(pp,newSVpv( "Not connected",0 )); \
+			ev_timer_start(_self->cnn.loop, &_self->postpone_timer); \
+			XSRETURN_UNDEF; \
+			return; \
+		} \
+} STMT_END
+
+#define xs_ev_cnn_checkconn_wlimit(_self,_cb,_wlimit) STMT_START{ \
+		if (unlikely(!_self->self || !SvOK(_self->self))) return ;\
+		if (unlikely(_self->cnn.state != CONNECTED) || unlikely( _wlimit > 0 && _self->cnn.wuse >= _wlimit )) { \
+			if (_self->cnn.wuse >= _wlimit) { warn("Write buffer limit exceeded: %d", _self->cnn.wuse); } \
+			if (!_self->postpone) _self->postpone = newAV(); \
+			AV *pp = newAV(); \
+			av_push(_self->postpone,newRV_noinc((SV *)pp)); \
+			SvREFCNT_inc(cb); \
+			av_push(pp,cb); \
+			av_push(pp,&PL_sv_undef); \
+			av_push(pp,newSVpv( _self->cnn.state != CONNECTED ? "Not connected" : "Write buffer limit exceeded",0 )); \
 			ev_timer_start(_self->cnn.loop, &_self->postpone_timer); \
 			XSRETURN_UNDEF; \
 			return; \
@@ -267,6 +285,21 @@ XS(XS_ev_cnn_port)
 	return;
 }
 
+XS(XS_ev_cnn_ok);
+XS(XS_ev_cnn_ok)
+{
+	dVAR;dXSARGS;
+	if (items != 1) croak_xs_usage(cv,  "self");
+	PERL_UNUSED_VAR(ax);
+	SP -= items;
+	
+	xs_ev_cnn_self(xs_ev_cnn);
+	ST(0) = self->cnn.state == CONNECTED ? &PL_sv_yes : &PL_sv_no;
+	
+	XSRETURN(1);
+	PUTBACK;
+	return;
+}
 
 #define xs_ev_cnn_on_connect(self, before, after) STMT_START {\
 	if (before) self->on_connect_before = before;\
