@@ -161,7 +161,7 @@ typedef struct {
 #define xs_ev_cnn_checkconn_wlimit(_self,_cb,_wlimit) STMT_START{ \
 		if (unlikely(!_self->self || !SvOK(_self->self))) return ;\
 		if (unlikely(_self->cnn.state != CONNECTED) || unlikely( _wlimit > 0 && _self->cnn.wuse >= _wlimit )) { \
-			if (_self->cnn.wuse >= _wlimit) { warn("Write buffer limit exceeded: %d", _self->cnn.wuse); } \
+			if (_self->cnn.state == CONNECTED) { warn("Write buffer limit exceeded: %d", _self->cnn.wuse); } \
 			if (!_self->postpone) _self->postpone = newAV(); \
 			AV *pp = newAV(); \
 			av_push(_self->postpone,newRV_noinc((SV *)pp)); \
