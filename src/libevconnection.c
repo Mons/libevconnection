@@ -77,6 +77,9 @@ void do_disable_rw_timer(ev_cnn * self) {
 }
 
 static void ev_cnn_ns_state_cb(ev_cnn *self, int s, int read, int write) {
+	if (unlikely(s <= 0)) {
+		cnntrace(self, "[ev_cnn_ns_state_cb] s = %d. read = %d. write = %d", s, read, write);
+	}
 	struct timeval *tvp, tv;
 	memset(&tv,0,sizeof(tv));
 	if( !ev_is_active( &self->dns.tw ) && (tvp = ares_timeout(self->dns.ares.channel, NULL, &tv)) ) {
@@ -178,6 +181,8 @@ void ev_cnn_init(ev_cnn *self) {
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
 	self->dns.ares.options.lookups = strdup("fb");
 	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000);
+	self->dns.ares.options.flags = ARES_FLAG_STAYOPEN;
+	
 	self->dns.timeout.tv_sec  = self->connect_timeout;
 	self->dns.timeout.tv_usec = (self->connect_timeout - (int)self->connect_timeout) * 1e6;
 
@@ -188,8 +193,7 @@ void ev_cnn_init(ev_cnn *self) {
 		self->dns.ios[i].id = i;
 	}
 	ev_init(&self->dns.tw,ns_tw_cb);
-	
-	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS );
+	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS | ARES_OPT_FLAGS);
 }
 
 void ev_cnn_clean(ev_cnn *self) {
