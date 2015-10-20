@@ -53,6 +53,10 @@ typedef struct {
 } xs_ev_cnn;
 
 #define I_EV_CNN_API(Module) STMT_START {\
+	int status;\
+	if (( status = ares_library_init(ARES_LIB_INIT_ALL) )!= ARES_SUCCESS) {\
+		croak("Ares library init error: %s\n", ares_strerror(status));\
+	}\
 	char * file = __FILE__;\
 	newXS(Module "::connect", XS_ev_cnn_connect, file);\
 	newXS(Module "::disconnect", XS_ev_cnn_disconnect, file);\
