@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <time.h>
 #include <fcntl.h>
+#
 
 
 #ifndef IOV_MAX
@@ -161,27 +162,9 @@ static void ns_tw_cb (EV_P_ ev_timer *w, int revents) {
 }
 
 #define ev_cnn_init_ares(self) do { \
-	self->dns.ares.options.sock_state_cb_data = self; \
-	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb; \
 	self->dns.ares.options.lookups = strdup("fb"); \
-	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000); \
-	\
-	if (unlikely(self->ares_reuse)) { \
-		self->dns.ares.options.flags = ARES_FLAG_STAYOPEN; \
-	} \
-	\
-	self->dns.timeout.tv_sec  = self->connect_timeout; \
-	self->dns.timeout.tv_usec = (self->connect_timeout - (int)self->connect_timeout) * 1e6; \
-	\
-	int i; \
-	for (i=0;i<IOMAX;i++) { \
-		ev_init(&self->dns.ios[i].io,ns_io_cb); \
-		self->dns.ios[i].io.fd = -1; \
-		self->dns.ios[i].id = i; \
-	} \
-	ev_init(&self->dns.tw,ns_tw_cb); \
 	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS | ARES_OPT_FLAGS); \
-} while(0)
+} while (0)
 
 #define ev_cnn_clean_ares(self) do { \
 	int i; \
@@ -198,8 +181,7 @@ static void ns_tw_cb (EV_P_ ev_timer *w, int revents) {
 	\
 	ares_destroy(self->dns.ares.channel); \
 	ares_destroy_options(&self->dns.ares.options); \
-	if (self->ai_top) freeaddrinfo(self->ai_top); \
-} while(0)
+} while (0)
 
 void ev_cnn_init(ev_cnn *self) {
 	//memset(self,0,sizeof(ev_cnn));
@@ -212,6 +194,26 @@ void ev_cnn_init(ev_cnn *self) {
 	self->trace = 0;
 	self->ares_reuse = 0;
 	
+	self->dns.ares.options.sock_state_cb_data = self;
+	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
+	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000);
+	
+	if (unlikely(self->ares_reuse)) {
+		self->dns.ares.options.flags = ARES_FLAG_STAYOPEN;
+	} else {
+		self->dns.ares.options.flags = 0;
+	}
+	
+	self->dns.timeout.tv_sec  = self->connect_timeout;
+	self->dns.timeout.tv_usec = (self->connect_timeout - (int)self->connect_timeout) * 1e6;
+	
+	int i;
+	for (i=0;i<IOMAX;i++) {
+		ev_init(&self->dns.ios[i].io,ns_io_cb);
+		self->dns.ios[i].io.fd = -1;
+		self->dns.ios[i].id = i;
+	}
+	ev_init(&self->dns.tw,ns_tw_cb);
 	ev_cnn_init_ares(self);
 }
 
@@ -220,6 +222,7 @@ void ev_cnn_clean(ev_cnn *self) {
 	do_disconnect(self);
 	
 	ev_cnn_clean_ares(self);
+	if (self->ai_top) freeaddrinfo(self->ai_top);
 	
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
