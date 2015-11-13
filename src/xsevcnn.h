@@ -119,8 +119,12 @@ typedef struct {
 		} \
 		else { croak("port required"); } \
 		\
-		if ((key = hv_fetchs(conf, "cnntrace", 0))) self->cnn.trace = (SvOK(*key) && SvIOK(*key)) ? SvIV(*key) : 1; \
-		if ((key = hv_fetchs(conf, "ares_reuse", 0))) self->cnn.ares_reuse = (SvOK(*key) && SvIOK(*key)) ? SvIV(*key) : 0; \
+		if ((key = hv_fetchs(conf, "cnntrace", 0))) { \
+			self->cnn.trace = SvOK(*key) ? SvIV(*key) : 1; \
+		} \
+		if ((key = hv_fetchs(conf, "ares_reuse", 0))) { \
+			self->cnn.ares_reuse = SvOK(*key) ? SvIV(*key) : 0; \
+		} \
 		self->postpone = 0;\
 		ev_timer_init(&self->postpone_timer,xs_ev_cnn_postpone_cb,0,0);\
 		\
