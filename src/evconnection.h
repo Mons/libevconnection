@@ -144,6 +144,7 @@ typedef struct {
 	} dns;
 	
 	int trace;
+	int ares_reuse;
 } ev_cnn;
 
 void ev_cnn_init(ev_cnn *self);

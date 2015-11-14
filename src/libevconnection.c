@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <time.h>
 #include <fcntl.h>
+#
 
 
 #ifndef IOV_MAX
@@ -165,7 +166,27 @@ static void ns_tw_cb (EV_P_ ev_timer *w, int revents) {
 	return;
 }
 
+#define ev_cnn_init_ares(self) do { \
+	self->dns.ares.options.lookups = strdup("fb"); \
+	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS | ARES_OPT_FLAGS); \
+} while (0)
 
+#define ev_cnn_clean_ares(self) do { \
+	int i; \
+	io_ptr *iop; \
+	for (i=0; i<IOMAX; i++) { \
+		if ( self->dns.ios[i].io.fd > -1 ) { \
+			iop = &self->dns.ios[i]; \
+			if (ev_is_active( &iop->io )) { \
+				ev_io_stop(self->loop, &iop->io); \
+			} \
+			\
+		} \
+	} \
+	\
+	ares_destroy(self->dns.ares.channel); \
+	ares_destroy_options(&self->dns.ares.options); \
+} while (0)
 
 void ev_cnn_init(ev_cnn *self) {
 	//memset(self,0,sizeof(ev_cnn));
@@ -176,12 +197,17 @@ void ev_cnn_init(ev_cnn *self) {
 	self->ipv6 = 1;
 	self->wnow = 1;
 	self->trace = 0;
+	self->ares_reuse = 0;
 	
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
-	self->dns.ares.options.lookups = strdup("fb");
 	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000);
-	self->dns.ares.options.flags = ARES_FLAG_STAYOPEN;
+	
+	if (unlikely(self->ares_reuse)) {
+		self->dns.ares.options.flags = ARES_FLAG_STAYOPEN;
+	} else {
+		self->dns.ares.options.flags = 0;
+	}
 	
 	self->dns.timeout.tv_sec  = self->connect_timeout;
 	self->dns.timeout.tv_usec = (self->connect_timeout - (int)self->connect_timeout) * 1e6;
@@ -193,31 +219,20 @@ void ev_cnn_init(ev_cnn *self) {
 		self->dns.ios[i].id = i;
 	}
 	ev_init(&self->dns.tw,ns_tw_cb);
-	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS | ARES_OPT_FLAGS);
+	ev_cnn_init_ares(self);
 }
 
 void ev_cnn_clean(ev_cnn *self) {
 	cnntrace(self, "destroying connection");
 	do_disconnect(self);
-	int i;
-	io_ptr *iop;
-	for (i=0; i<IOMAX; i++) {
-		if ( self->dns.ios[i].io.fd > -1 ) {
-			iop = &self->dns.ios[i];
-			if (ev_is_active( &iop->io )) {
-				ev_io_stop(self->loop, &iop->io);
-			}
-
-		}
-	}
-
+	
+	ev_cnn_clean_ares(self);
+	if (self->ai_top) freeaddrinfo(self->ai_top);
+	
 	if (self->rw.active) ev_io_stop(self->loop,&self->rw);
 	if (self->ww.active) ev_io_stop(self->loop,&self->ww);
 	if (self->tw.active) ev_timer_stop(self->loop,&self->tw);
-
-	ares_destroy(self->dns.ares.channel);
-	ares_destroy_options(&self->dns.ares.options);
-	if (self->ai_top) freeaddrinfo(self->ai_top);
+	
 	if (self->wbuf) {
 		int i;
 		for ( i=0; i < self->wuse; i++) {
@@ -414,7 +429,13 @@ static inline void _resolve_a(ev_cnn *self) {
 
 static void _do_resolve (ev_cnn *self) {
 	if (unlikely( self->state != RESOLVING )) return;
+	if (likely(self->ares_reuse == 0)) {
+		cnntrace(self, "cleaning ares structures");
+		ev_cnn_clean_ares(self);
+		ev_cnn_init_ares(self);
+	}
 	cnntrace(self, "_do_resolve: %s", self->host);
+	
 	if (!self->host) {
 		set_state(CONNECTING);
 		on_connect_failed(self,EDESTADDRREQ);
@@ -428,7 +449,7 @@ static void _do_resolve (ev_cnn *self) {
 		return;
 	}
 	else
-	if (getaddrinfo(self->host,0,&hints4,&self->ai_top) == 0) {
+	if (getaddrinfo(self->host,0,&hints6,&self->ai_top) == 0) {
 		struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *) self->ai_top->ai_addr;
 		sin6->sin6_port = htons(self->port);
 		self->dns.expire = time(NULL) + 86400;
