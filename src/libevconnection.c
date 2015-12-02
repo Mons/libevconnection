@@ -73,22 +73,23 @@ void do_disable_rw_timer(ev_cnn * self) {
 }
 
 static void ev_cnn_ns_state_cb(ev_cnn *self, int s, int read, int write) {
-	if (unlikely(s <= 0)) {
-		cnntrace(self, "[ev_cnn_ns_state_cb] s = %d. read = %d. write = %d", s, read, write);
-	}
 	struct timeval *tvp, tv;
 	memset(&tv,0,sizeof(tv));
-	if( !ev_is_active( &self->dns.tw ) && (tvp = ares_timeout(self->dns.ares.channel, NULL, &tv)) ) {
+	if( (tvp = ares_timeout(self->dns.ares.channel, NULL, &tv)) ) {
 		double timeout = (double)tvp->tv_sec+(double)tvp->tv_usec/1.0e6;
-		cwarn("Set timeout to %0.8lf for %d",timeout, s);
-		if (timeout > 0) {
-			//resolver->tw.interval = timeout;
-			//ev_timer_again(resolver->loop, &eares->tw);
-			ev_timer_set(&self->dns.tw,timeout,0.);
+		if (timeout <= 0) {
+			timeout = self->connect_timeout / 2.0;
+		}
+		cnntrace(self, "Set dns timeout to %0.8lf for %d", timeout, s);
+		ev_timer_set(&self->dns.tw,timeout, 0.);
+		
+		if(!ev_is_active( &self->dns.tw )) {
 			ev_timer_start(self->loop, &self->dns.tw);
+		} else {
+			ev_timer_again(self->loop, &self->dns.tw);
 		}
 	}
-	//cwarn("Change state fd %d read:%d write:%d; max time: %zu.%zu (%p) (active: %d)", s, read, write, tv.tv_sec, tv.tv_usec, tvp, self->dns.ioc);
+	cnntrace(self, "Change state fd %d read:%d write:%d; max time: %zu.%zu (%p) (active: %d)", s, read, write, tv.tv_sec, tv.tv_usec, tvp, self->dns.ioc);
 	int i;
 	io_ptr * iop_new = 0, * iop_old = 0, *iop;
 	for (i=0; i<IOMAX; i++) {
@@ -105,7 +106,7 @@ static void ev_cnn_ns_state_cb(ev_cnn *self, int s, int read, int write) {
 	}
 	if (!iop_old) {
 		if (!iop_new) {
-			cwarn("Can't find slot for io on fd %d",s);
+			cnntrace(self, "Can't find slot for resolve io on fd %d",s);
 			return;
 		}
 		else {
@@ -115,10 +116,12 @@ static void ev_cnn_ns_state_cb(ev_cnn *self, int s, int read, int write) {
 	else {
 		iop = iop_old;
 	}
+	
 	if (read || write) {
 		if (iop->io.fd != s) {
 			self->dns.ioc++;
 		}
+		cnntrace(self, "Starting dns io watcher #%d on fd=%d", iop->id, s);
 		ev_io_set( &iop->io, s, (read ? EV_READ : 0) | (write ? EV_WRITE : 0) );
 		ev_io_start( self->loop, &iop->io );
 	}
@@ -140,6 +143,8 @@ static void ns_io_cb (EV_P_ ev_io *w, int revents) {
 	io_ptr * iop = (io_ptr *) w;
 	dSELFby(w, dns.ios[ iop->id ]);
 	
+	ev_timer_again( self->loop, &self->dns.tw );
+	
 	ares_socket_t rfd = ARES_SOCKET_BAD, wfd = ARES_SOCKET_BAD;
 	
 	if (revents & EV_READ)  rfd = w->fd;
@@ -152,18 +157,26 @@ static void ns_io_cb (EV_P_ ev_io *w, int revents) {
 
 static void ns_tw_cb (EV_P_ ev_timer *w, int revents) {
 	dSELFby(w,dns.tw);
+	
+	ev_timer_set(&self->dns.tw, self->connect_timeout / 2.0, 0.0);
+	ev_timer_again( self->loop, &self->dns.tw );
+	
 	fd_set readers, writers;
 	FD_ZERO(&readers);
 	FD_ZERO(&writers);
 	
 	ares_process(self->dns.ares.channel, &readers, &writers);
+	// ares_process_fd(self->dns.ares.channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
 	
 	return;
 }
 
 #define ev_cnn_init_ares(self) do { \
 	self->dns.ares.options.lookups = strdup("fb"); \
-	ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS | ARES_OPT_FLAGS); \
+	int status = ares_init_options(&self->dns.ares.channel, &self->dns.ares.options, ARES_OPT_SOCK_STATE_CB | ARES_OPT_LOOKUPS | ARES_OPT_TIMEOUTMS | ARES_OPT_FLAGS); \
+	if (status != ARES_SUCCESS) { \
+		cnntrace(self, "ares_init_options failed: [%d] %s", status, ares_strerror(status)); \
+	} \
 } while (0)
 
 #define ev_cnn_clean_ares(self) do { \
@@ -175,9 +188,10 @@ static void ns_tw_cb (EV_P_ ev_timer *w, int revents) {
 			if (ev_is_active( &iop->io )) { \
 				ev_io_stop(self->loop, &iop->io); \
 			} \
-			\
+			ev_io_set(&self->dns.ios[i].io, -1, 0); \
 		} \
 	} \
+	ev_timer_stop(self->loop, &self->dns.tw); \
 	\
 	ares_destroy(self->dns.ares.channel); \
 	ares_destroy_options(&self->dns.ares.options); \
@@ -209,8 +223,7 @@ void ev_cnn_init(ev_cnn *self) {
 	
 	int i;
 	for (i=0;i<IOMAX;i++) {
-		ev_init(&self->dns.ios[i].io,ns_io_cb);
-		self->dns.ios[i].io.fd = -1;
+		ev_io_init(&self->dns.ios[i].io,ns_io_cb, -1, 0);
 		self->dns.ios[i].id = i;
 	}
 	ev_init(&self->dns.tw,ns_tw_cb);
@@ -647,6 +660,10 @@ static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 		ev_io_start( loop, &self->rw );
 		
 		ev_io_init( &self->ww, on_write_io, w->fd, EV_WRITE );
+		
+		if (ev_is_active(&self->dns.tw)) {
+			ev_timer_stop(loop, &self->dns.tw);
+		}
 		
 		set_state(CONNECTED);
 		
