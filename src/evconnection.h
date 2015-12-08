@@ -130,7 +130,6 @@ typedef struct {
 		io_ptr     ios[IOMAX];
 		int        ioc;
 		ev_timer   tw;
-		struct ev_loop * loop;
 		struct {
 			ares_channel channel;
 			struct ares_options options;
