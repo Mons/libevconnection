@@ -985,9 +985,11 @@ void do_write(ev_cnn *self, char *buf, size_t len) {
 			}
 		}
 	}
-
-	self->wlen = 2;
-	self->wbuf = calloc( self->wlen, sizeof(struct iovec) );
+	
+	if (unlikely(self->wlen == 0)) {
+		self->wlen = 2;
+		self->wbuf = calloc( self->wlen, sizeof(struct iovec) );
+	}
 	self->wbuf[0].iov_base = memdup(buf + wr,len - wr);
 	self->wbuf[0].iov_len  = len - wr;
 	self->wuse = 1;
