@@ -254,20 +254,24 @@ void ev_cnn_clean(ev_cnn *self) {
 	}
 }
 
+
 int ares_to_errno(int err) {
+#ifndef ENODATA
+#define ENODATA ENOENT
+#endif
 	switch(err) {
 		case ARES_ENODATA: return ENODATA;
 		case ARES_EFORMERR: return EILSEQ; // The query completed but the server claims that the query was malformatted.
-		case ARES_ESERVFAIL: return EHOSTDOWN; // The query completed but the server claims to have experienced a failure. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
+		case ARES_ESERVFAIL: return EHOSTUNREACH; // The query completed but the server claims to have experienced a failure. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
 		case ARES_ENOTFOUND: return ENOENT; // The query completed but the queried-for domain name was not found.
 		case ARES_ENOTIMP: return ENOSYS; // The query completed but the server does not implement the operation requested by the query. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
 		case ARES_EREFUSED: return ECONNREFUSED; // The query completed but the server refused the query. (This code can only occur if the ARES_FLAG_NOCHECKRESP flag was specified at channel initialization time; otherwise, such responses are ignored at the ares_send (3) level.)
-		case ARES_EBADNAME: return EBADRQC; // The query name name could not be encoded as a domain name, either because it contained a zero-length label or because it contained a label of more than 63 characters.
+		case ARES_EBADNAME: return EINVAL; // The query name name could not be encoded as a domain name, either because it contained a zero-length label or because it contained a label of more than 63 characters.
 		case ARES_ETIMEOUT: return ETIMEDOUT; // No name servers responded within the timeout period.
 		case ARES_ECONNREFUSED: return ECONNREFUSED; // No name servers could be contacted.
 		case ARES_ENOMEM: return ENOMEM; // Memory was exhausted.
 		case ARES_ECANCELLED: return ECANCELED; // The query was cancelled.
-		case ARES_EDESTRUCTION: return ESHUTDOWN; // The name service channel channel is being destroyed; the query will not be completed.
+		case ARES_EDESTRUCTION: return ECONNABORTED; // The name service channel channel is being destroyed; the query will not be completed.
 		default: return err;
 	}
 }
