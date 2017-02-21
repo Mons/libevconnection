@@ -779,11 +779,8 @@ static void _do_connect(ev_cnn * self) {
 	again:
 
 	if (
-		connect( sock, ai->ai_addr, ai->ai_addrlen) == 0
+		connect( sock, ai->ai_addr, ai->ai_addrlen) != 0
 	) {
-		on_connect_io(EV_DEFAULT, &self->ww, 0);
-		return;
-	} else {
 		//warn("connect: %s...",strerror(errno));
 		switch (errno) {
 			case EINPROGRESS:
