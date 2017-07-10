@@ -64,6 +64,7 @@ typedef enum {
 const char * strstate( CnnState x );
 
 typedef void (*c_cb_err_t)(void *, int);
+typedef void (*c_cb_discon_t)(void *, int, const char *);
 typedef void (*c_cb_conn_t)(void *, struct sockaddr *);
 typedef void (*c_cb_read_t)(void *, size_t);
 
@@ -106,7 +107,7 @@ typedef struct {
 	double rw_timeout;
 
 	c_cb_conn_t on_connected;
-	c_cb_err_t  on_disconnect;
+	c_cb_discon_t  on_disconnect;
 	c_cb_err_t  on_connfail;
 	c_cb_read_t on_read;
 
@@ -153,7 +154,7 @@ void do_disconnect(ev_cnn * self);
 
 void do_write(ev_cnn *self, char *buf, size_t len);
 
-void on_connect_reset(ev_cnn * self, int err);
+void on_connect_reset(ev_cnn * self, int err, const char *reason);
 
 void do_enable_rw_timer(ev_cnn * self);
 void do_disable_rw_timer(ev_cnn * self);
