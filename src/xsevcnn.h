@@ -52,6 +52,18 @@ typedef struct {
 #endif
 } xs_ev_cnn;
 
+SV* status_const[] = {0,0,0,0,0,0,0};
+
+#define set_const(_stash, name) STMT_START {\
+	SV *tmp = newSVpvs(#name);\
+	(void)SvUPGRADE(tmp, SVt_PVIV);\
+	SvIV_set(tmp, name);\
+	SvIOK_on(tmp);\
+	SvREADONLY_on(tmp);\
+	status_const[name] = tmp;\
+	newCONSTSUB(_stash, #name, status_const[name]);\
+}STMT_END
+
 #define I_EV_CNN_API(Module) STMT_START {\
 	int status;\
 	if (( status = ares_library_init(ARES_LIB_INIT_ALL) )!= ARES_SUCCESS) {\
@@ -66,6 +78,17 @@ typedef struct {
 	newXS(Module "::host", XS_ev_cnn_host, file);\
 	newXS(Module "::port", XS_ev_cnn_port, file);\
 	newXS(Module "::ok", XS_ev_cnn_ok, file);\
+	newXS(Module "::ready", XS_ev_cnn_ok, file);\
+	newXS(Module "::status", XS_ev_cnn_status, file);\
+	\
+	HV *stash = gv_stashpv(Module, TRUE);\
+	set_const(stash, INITIAL);\
+	set_const(stash, RESOLVING);\
+	set_const(stash, CONNECTING);\
+	set_const(stash, CONNECTED);\
+	set_const(stash, DISCONNECTING);\
+	set_const(stash, DISCONNECTED);\
+	set_const(stash, RECONNECTING);\
 } STMT_END
 
 
@@ -307,6 +330,27 @@ XS(XS_ev_cnn_ok)
 	ST(0) = self->cnn.state == CONNECTED ? &PL_sv_yes : &PL_sv_no;
 	
 	XSRETURN(1);
+	PUTBACK;
+	return;
+}
+
+XS(XS_ev_cnn_status);
+XS(XS_ev_cnn_status)
+{
+	dVAR;dXSARGS;
+	if (items != 1) croak_xs_usage(cv,  "self");
+	PERL_UNUSED_VAR(ax);
+	SP -= items;
+
+	xs_ev_cnn_self(xs_ev_cnn);
+	if (status_const[self->cnn.state]){
+		ST(0) = status_const[self->cnn.state];
+		XSRETURN(1);
+	}
+	else {
+		XSRETURN_UNDEF;
+	}
+
 	PUTBACK;
 	return;
 }
