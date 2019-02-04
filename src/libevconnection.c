@@ -294,7 +294,7 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 
 	char ip[INET6_ADDRSTRLEN];
 
-	cwarn("Found address name %s\n", hostent->h_name);
+	// cwarn("Found address name %s\n", hostent->h_name);
 	for (i = 0; hostent->h_addr_list[i]; ++i) {
 		inet_ntop(hostent->h_addrtype, hostent->h_addr_list[i], ip, sizeof(ip));
 		if (hostent->h_addrtype == AF_INET) {
@@ -304,9 +304,9 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 				sin->sin_port = htons(self->port);
 				curr = &(*curr)->ai_next;
 				self->dns.expire = time(NULL) + 60;
-				cwarn("af_inet success: %s", ip);
+				// cwarn("af_inet success: %s", ip);
 			} else {
-				cwarn("af_inet failed: %s",gai_strerror(err));
+				// cwarn("af_inet failed: %s",gai_strerror(err));
 			}
 		}
 		else
@@ -317,9 +317,9 @@ static void ev_ares_ghbn_cb (ev_cnn * self, int status, int timeouts, struct hos
 				sin6->sin6_port = htons(self->port);
 				curr = &(*curr)->ai_next;
 				self->dns.expire = time(NULL) + 60;
-				cwarn("af_inet6 success: %s", ip);
+				// cwarn("af_inet6 success: %s", ip);
 			} else {
-				cwarn("af_inet6 failed: %s",gai_strerror(err));
+				// cwarn("af_inet6 failed: %s",gai_strerror(err));
 			}
 		}
 		else {
@@ -357,7 +357,7 @@ static void ev_ares_aaaa_cb (ev_cnn * self, int status, int timeouts, unsigned c
 	struct sockaddr_in6 * sin6;
 	char ip[INET6_ADDRSTRLEN];
 
-	cwarn("ok %d", count);
+	// cwarn("ok %d", count);
 	int i,err;
 	for (i = 0; i < count; i++) {
 		if (minttl > a[i].ttl)
@@ -601,7 +601,7 @@ void on_connect_reset(ev_cnn * self, int err, const char *reason) {
 
 static void on_connect_timer ( struct ev_loop *loop, ev_timer *w, int revents ) {
 	dSELFby(w,tw);
-	cwarn("on con timer %p -> %p", w, self);
+	// cwarn("on con timer %p -> %p", w, self);
 	ev_timer_stop( loop, w );
 	ev_io_stop( loop, &self->ww );
 	cnntrace(self,"on_connect_timer");
@@ -611,7 +611,7 @@ static void on_connect_timer ( struct ev_loop *loop, ev_timer *w, int revents ) 
 
 static void on_rw_timer(  struct ev_loop *loop, ev_timer *w, int revents ) {
 	dSELFby(w,tw);
-	cwarn("on rw timer %p -> %p", w, self);
+	// cwarn("on rw timer %p -> %p", w, self);
 	ev_timer_stop( loop, w );
 	cnntrace(self,"on_rw_timer");
 	on_connect_reset(self,ETIMEDOUT,NULL);
