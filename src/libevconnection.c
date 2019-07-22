@@ -211,6 +211,8 @@ void ev_cnn_init(ev_cnn *self) {
 	self->trace = 0;
 	self->ares_reuse = 0;
 	
+	self->ww.fd = -1;
+	
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
 	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000);
@@ -555,7 +557,9 @@ void on_connect_reset(ev_cnn * self, int err, const char *reason) {
 		free(self->wbuf[self->wuse].iov_base);
 		self->wbuf[self->wuse].iov_len = 0;
 	}
-
+	
+	self->ruse = 0;
+	
 	if (err != 0 && reason != NULL) {
 		cnntrace(self, "connection reset: %s: %s (reconnect: %f)",strerror(err),reason,self->reconnect);
 	} else if (reason != NULL) {
@@ -811,6 +815,15 @@ void do_disconnect(ev_cnn * self) {
 		ev_io_stop(self->loop,&self->ww);
 		ev_io_stop(self->loop,&self->rw);
 		if (self->ww.fd > -1) close(self->ww.fd);
+		
+		while (self->wuse > 0) {
+			self->wuse--;
+			free(self->wbuf[self->wuse].iov_base);
+			self->wbuf[self->wuse].iov_len = 0;
+		}
+		
+		self->ruse = 0;
+		
 		if (self->on_disconnect) {
 			set_state(DISCONNECTING);
 			cnntrace(self, "CALL on_disconnect");
