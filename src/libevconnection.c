@@ -211,6 +211,8 @@ void ev_cnn_init(ev_cnn *self) {
 	self->trace = 0;
 	self->ares_reuse = 0;
 	
+	self->ww.fd = -1;
+	
 	self->dns.ares.options.sock_state_cb_data = self;
 	self->dns.ares.options.sock_state_cb = (ares_sock_state_cb) ev_cnn_ns_state_cb;
 	self->dns.ares.options.timeout = (int)(self->connect_timeout*1000);
