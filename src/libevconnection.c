@@ -668,6 +668,7 @@ static void on_connect_io( struct ev_loop *loop, ev_io *w, int revents ) {
 
 	again:
 	if( getpeername( w->fd, &peer, &addrlen) == 0 ) {
+		self->ruse = 0;
 
 		ev_timer_stop( loop, &self->tw );
 		ev_io_stop( loop, w );
